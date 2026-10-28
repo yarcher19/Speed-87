@@ -1,0 +1,1428 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>北北基桃測速照相與科技執法雷達 (純網頁免安裝版)</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+      background-color: #0b0f19;
+      color: #f1f5f9;
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    /* Dark map filter for automotive HUD style */
+    .leaflet-tile-pane {
+      filter: brightness(0.82) invert(1) contrast(1.85) hue-rotate(200deg) saturate(0.45);
+    }
+    .leaflet-container {
+      background: #0f172a;
+      font-family: 'Inter', sans-serif;
+    }
+    .leaflet-popup-content-wrapper {
+      background: #1e293b;
+      color: #f8fafc;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7);
+    }
+    .leaflet-popup-tip {
+      background: #1e293b;
+    }
+    .speed-sign {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 6px solid #ef4444;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.5rem;
+      box-shadow: 0 0 20px rgba(239, 68, 68, 0.55);
+      flex-shrink: 0;
+    }
+    .speed-sign-sm {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 4px solid #ef4444;
+      color: #0f172a;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.9rem;
+      flex-shrink: 0;
+    }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.85); opacity: 0.9; }
+      70% { transform: scale(1.75); opacity: 0; }
+      100% { transform: scale(1.75); opacity: 0; }
+    }
+    .radar-pulse::before {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+      border: 2px solid currentColor;
+      animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+    .alert-flash {
+      animation: flashRed 0.9s infinite alternate;
+    }
+    @keyframes flashRed {
+      from { box-shadow: 0 0 12px rgba(239, 68, 68, 0.35); border-color: #ef4444; }
+      to { box-shadow: 0 0 32px rgba(239, 68, 68, 0.95); border-color: #fca5a5; }
+    }
+    /* Windshield HUD Mirror Mode */
+    .hud-mirror-active {
+      transform: scaleX(-1);
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-950 text-slate-100">
+
+  <!-- Top Navigation & Status Bar -->
+  <header class="sticky top-0 z-40 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-3 sm:px-6 py-2.5">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center shadow-lg shadow-red-500/20">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-sm sm:text-base tracking-tight text-white">北北基桃測速防治雷達</h1>
+            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">純網頁免安裝版</span>
+          </div>
+          <p class="text-[11px] text-slate-400 hidden sm:block">四市警政系統官方公告：臺北市、新北市、桃園市、基隆市全點位整合 (共 267 處執法點)</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="flex items-center gap-1 bg-slate-800/80 p-1 rounded-xl border border-slate-700/70">
+        <button id="tabBtnMap" data-tab="map" class="tab-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition bg-blue-600 text-white shadow">
+          實戰行車 HUD
+        </button>
+        <button id="tabBtnList" data-tab="list" class="tab-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition text-slate-300 hover:text-white">
+          四市資料庫 (<span id="navTotalCount">267</span>)
+        </button>
+        <button id="tabBtnStats" data-tab="stats" class="tab-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition text-slate-300 hover:text-white">
+          罰鍰試算與統計
+        </button>
+      </nav>
+
+      <!-- Quick Audio, WakeLock, HUD Mirror & Add Controls -->
+      <div class="flex flex-wrap items-center gap-1.5">
+        <button id="btnToggleWakeLock" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition" title="防止手機螢幕休眠（車架模式必備）">
+          <span id="wakeLockIcon">💡</span>
+          <span id="wakeLockLabel" class="hidden xl:inline">螢幕恆亮：關閉</span>
+        </button>
+        <button id="btnToggleMirrorHud" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/25 transition" title="前擋風玻璃投影反射模式（左右鏡像翻轉）">
+          <span>🪞</span>
+          <span id="mirrorHudLabel" class="hidden md:inline">前擋投影 HUD</span>
+        </button>
+        <button id="btnToggleVoice" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition" title="切換語音與逼逼聲預警">
+          <span id="voiceIcon">🔊</span>
+          <span id="voiceLabel" class="hidden md:inline">語音預警：開啟</span>
+        </button>
+        <button id="btnToggleDoubleVolume" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition shadow" title="雙倍超大音量增益（針對汽車音響、導航音樂或重機風切聲）">
+          <span id="doubleVolumeIcon">⚡</span>
+          <span id="doubleVolumeLabel" class="hidden md:inline">音量：雙倍震撼 (2x)</span>
+        </button>
+        <button id="btnToggleDoubleDistance" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 transition shadow" title="雙倍提前預警距離（市區 760m / 高架 1600m 提前預警）">
+          <span id="doubleDistanceIcon">🎯</span>
+          <span id="doubleDistanceLabel" class="hidden md:inline">預警：雙倍遠距 (760m)</span>
+        </button>
+        <button id="btnOpenReportModal" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition">
+          <span>＋回報新點</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Global Toast Notification -->
+  <div id="toastMsg" class="fixed bottom-5 right-5 z-50 transform translate-y-10 opacity-0 transition-all duration-300 bg-slate-900 border border-slate-700 text-white text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 pointer-events-none">
+    <span id="toastIcon">💡</span>
+    <span id="toastText">訊息提示</span>
+  </div>
+
+  <!-- Main Views Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5">
+
+    <!-- ========================================== -->
+    <!-- VIEW 1: RADAR MAP & DRIVING HUD (GPS ONLY)  -->
+    <!-- ========================================== -->
+    <section id="viewMap" class="space-y-4">
+      
+      <!-- Top Real GPS Bar (Pure GPS Driving Mode) -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-lg">
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div class="flex items-center gap-2.5">
+            <div class="w-3.5 h-3.5 rounded-full bg-emerald-500 animate-pulse"></div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-white uppercase tracking-wider">純網頁 GPS 定位行車防制模式</span>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">免安裝 · 瀏覽器即開即用</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-0.5" id="gpsStatusSubtext">瀏覽器直接呼叫手機衛星 GPS 定位，自動計算前方照相桿與移動式執法距離</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 w-full sm:w-auto">
+            <button id="btnRealGps" class="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition">
+              <span id="gpsBtnIcon">📍</span>
+              <span id="gpsBtnText">重新定位我的位置</span>
+            </button>
+            <button id="btnTestVoiceAlert" class="shrink-0 flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700 transition" title="測試語音與雙倍蜂鳴音效">
+              <span>🔔</span>
+              <span>測試播報</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dashboard Grid: Driving HUD Card & Map Radar -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        
+        <!-- Left: Driving HUD Telemetry Card (7 Cols) -->
+        <div class="lg:col-span-7 flex flex-col gap-4">
+          
+          <!-- Primary HUD Card -->
+          <div id="hudAlertCard" class="relative overflow-hidden rounded-3xl bg-slate-900 border-2 border-emerald-500/40 p-5 sm:p-6 transition-all duration-300 shadow-xl">
+            
+            <!-- Header strip in HUD -->
+            <div class="flex items-center justify-between border-b border-slate-800/80 pb-3 mb-4">
+              <div class="flex items-center gap-2">
+                <span id="hudStatusDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span id="hudStatusText" class="text-xs font-bold text-emerald-400 tracking-wider">車速正常 · 前方無超速風險</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span id="hudHeadingBadge" class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">方位：北 0°</span>
+                <span id="hudGpsSpeedBadge" class="text-[11px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">真實 GPS 連線</span>
+              </div>
+            </div>
+
+            <!-- Central Speed & Speed Limit Sign -->
+            <div class="flex items-center justify-between gap-4 py-2">
+              <div>
+                <div class="text-[11px] font-bold text-slate-400 tracking-widest uppercase">目前 GPS 車速</div>
+                <div class="flex items-baseline gap-1.5 mt-0.5">
+                  <span id="hudCurrentSpeed" class="text-5xl sm:text-6xl font-black mono text-white tracking-tight">0</span>
+                  <span class="text-sm font-bold text-slate-400">km/h</span>
+                </div>
+                <div class="text-xs text-slate-400 mt-1">
+                  速限寬限值：<span id="hudToleranceTag" class="text-emerald-400 font-bold">&lt; 速限 + 10 km/h</span>
+                </div>
+              </div>
+
+              <!-- Speed Limit Circular Sign -->
+              <div class="flex flex-col items-center">
+                <div id="hudSpeedSign" class="speed-sign">50</div>
+                <span class="text-[10px] text-slate-400 mt-1 font-semibold">該路段速限</span>
+              </div>
+
+              <!-- Distance to Target Camera -->
+              <div class="text-right">
+                <div class="text-[11px] font-bold text-slate-400 tracking-widest uppercase">距離執法點</div>
+                <div class="flex items-baseline justify-end gap-1 mt-0.5">
+                  <span id="hudNearestDistance" class="text-4xl sm:text-5xl font-black mono text-amber-400 tracking-tight">--</span>
+                  <span class="text-sm font-bold text-slate-400">m</span>
+                </div>
+                <span id="hudNearestBadge" class="inline-block text-[10px] font-bold px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 mt-1">
+                  固定式測速
+                </span>
+              </div>
+            </div>
+
+            <!-- Proximity Warning Bar -->
+            <div class="mt-4 pt-3 border-t border-slate-800/80">
+              <div class="flex justify-between items-center text-xs text-slate-400 mb-1.5">
+                <span>距離最近執法點預警進度</span>
+                <span id="hudWarningLevelText" class="font-bold text-emerald-400">雷達掃描中</span>
+              </div>
+              <div class="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-800">
+                <div id="hudProximityBar" class="h-full bg-gradient-to-r from-emerald-500 via-amber-500 to-red-500 transition-all duration-300" style="width: 10%;"></div>
+              </div>
+            </div>
+
+            <!-- Nearest Camera Info Strip -->
+            <div class="mt-4 bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3.5 flex items-start gap-3">
+              <div class="w-8 h-8 rounded-xl bg-slate-800 flex items-center justify-center shrink-0 text-base mt-0.5">
+                📷
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span id="hudCameraCode" class="text-xs font-mono font-bold text-blue-400">--</span>
+                  <h3 id="hudCameraLocation" class="text-sm font-bold text-white truncate">正在搜尋周邊執法點...</h3>
+                </div>
+                <p id="hudCameraDetails" class="text-xs text-slate-400 mt-1 truncate">
+                  拍攝方向：-- ｜ 轄區：-- ｜ 取締項目：--
+                </p>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Nearby Cameras Quick Strip (Top 4 closest) -->
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-bold text-slate-300">周邊最近 4 處執法點（依即時距離排序）</span>
+              <span class="text-[11px] text-slate-500">北北基桃即時雷達</span>
+            </div>
+            <div id="nearbyListContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right: Leaflet Interactive Map & Filter Strip (5 Cols) -->
+        <div class="lg:col-span-5 flex flex-col gap-3">
+          
+          <!-- Map Filter Quick Bar -->
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-lg flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <select id="mapCityFilter" class="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white focus:outline-none">
+                <option value="ALL">全部縣市 (四市)</option>
+                <option value="臺北市">臺北市</option>
+                <option value="新北市">新北市</option>
+                <option value="桃園市">桃園市</option>
+                <option value="基隆市">基隆市</option>
+              </select>
+
+              <select id="mapCategoryFilter" class="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white focus:outline-none">
+                <option value="ALL">所有執法類型</option>
+                <option value="fixed">固定式照相 (141+)</option>
+                <option value="mobile">移動式黑箱 (63+)</option>
+                <option value="interval">區間測速 (2+)</option>
+                <option value="tech">科技執法 (15+)</option>
+              </select>
+            </div>
+
+            <input id="mapSearchInput" type="text" placeholder="搜尋路名（如：仰德、中正、文化）..." class="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 w-40 sm:w-48" />
+          </div>
+
+          <!-- Interactive Leaflet Map Container -->
+          <div class="relative bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-xl min-h-[460px] flex-1">
+            <div id="radarMap" class="w-full h-full min-h-[460px] z-10"></div>
+            
+            <!-- Map Legend Overlay -->
+            <div class="absolute bottom-3 left-3 z-20 bg-slate-950/90 backdrop-blur border border-slate-800 rounded-xl p-2.5 text-[11px] flex flex-wrap items-center gap-3 shadow-xl">
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>固定式</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>移動式</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-purple-500"></span>區間測速</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>科技執法</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>您的車輛</span>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- ========================================== -->
+    <!-- VIEW 2: DATABASE DIRECTORY (北北基桃清單)  -->
+    <!-- ========================================== -->
+    <section id="viewList" class="hidden space-y-4">
+      
+      <!-- Search & Filters Container -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-bold text-white">北北基桃警政公告測速與科技執法資料庫</h2>
+            <p class="text-xs text-slate-400 mt-0.5">涵蓋臺北市、新北市、桃園市、基隆市警察局公告清冊</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btnFilterFavs" class="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition">
+              <span>★</span> <span>僅看收藏點</span>
+            </button>
+            <button id="btnExportCsv" class="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/30 transition">
+              <span>📥</span> <span>匯出 CSV</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-800/80">
+          <input id="listSearchInput" type="text" placeholder="搜尋縣市、路名、拍攝方向、編號..." class="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" />
+          
+          <select id="listCityFilter" class="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm text-white">
+            <option value="ALL">全部縣市 (四市)</option>
+            <option value="臺北市">臺北市</option>
+            <option value="新北市">新北市</option>
+            <option value="桃園市">桃園市</option>
+            <option value="基隆市">基隆市</option>
+          </select>
+
+          <select id="listCategoryFilter" class="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm text-white">
+            <option value="ALL">全部執法類型</option>
+            <option value="fixed">固定式測速照相桿</option>
+            <option value="mobile">移動式常設執法黑箱</option>
+            <option value="interval">區間平均速率照相</option>
+            <option value="tech">多功能科技執法</option>
+          </select>
+
+          <select id="listSpeedFilter" class="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm text-white">
+            <option value="ALL">全部速限級距</option>
+            <option value="40">速限 40 km/h (山區/慢車道)</option>
+            <option value="50">速限 50 km/h (市區幹道)</option>
+            <option value="60">速限 60 km/h (快速道路)</option>
+            <option value="70">速限 70 km/h (高架快速路段)</option>
+            <option value="80">速限 80 km/h (市民/洲美高架)</option>
+          </select>
+        </div>
+
+        <div class="text-xs text-slate-400 flex items-center justify-between pt-1">
+          <span>共篩選出 <strong id="filterMatchCount" class="text-emerald-400 font-bold">0</strong> 處執法點位</span>
+          <span>資料更新：依臺北市、新北市、桃園市、基隆市警局最新公告</span>
+        </div>
+      </div>
+
+      <!-- Data Table Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs sm:text-sm">
+            <thead class="bg-slate-950 text-slate-400 border-b border-slate-800 text-[11px] uppercase tracking-wider">
+              <tr>
+                <th class="py-3 px-3">編號</th>
+                <th class="py-3 px-2">縣市</th>
+                <th class="py-3 px-2">類型</th>
+                <th class="py-3 px-3">設置地點</th>
+                <th class="py-3 px-2">拍攝方向</th>
+                <th class="py-3 px-2 text-center">速限</th>
+                <th class="py-3 px-3">取締重點與備註</th>
+                <th class="py-3 px-3 text-center">操作</th>
+              </tr>
+            </thead>
+            <tbody id="cameraTableBody" class="divide-y divide-slate-800/60">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========================================== -->
+    <!-- VIEW 3: FINES CALCULATOR & ROAD STATISTICS  -->
+    <!-- ========================================== -->
+    <section id="viewStats" class="hidden space-y-4">
+      
+      <!-- Fines Calculator Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl">
+        <div class="max-w-2xl">
+          <span class="text-xs font-bold text-red-400 uppercase tracking-wider">最新道路交通管理處罰條例 (超速40km嚴重違規新制)</span>
+          <h2 class="text-base sm:text-lg font-bold text-white mt-1.5">北北基桃超速罰鍰與吊扣牌照即時試算器</h2>
+          <p class="text-xs text-slate-400 mt-1">輸入道路速限與行車時速，即時精算是否超過 10 km/h 寬限值、罰金級距與吊扣駕照/牌照年限。</p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
+            <div>
+              <label class="block text-xs text-slate-300 font-semibold mb-1">車種分類</label>
+              <select id="calcVehicleType" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm text-white">
+                <option value="scooter">機車 (輕型/普通重型)</option>
+                <option value="car" selected>小型車 (自用小客車/休旅車)</option>
+                <option value="truck">大型車 (大客車/大貨車)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-300 font-semibold mb-1">道路法定速限 (km/h)</label>
+              <select id="calcSpeedLimit" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm text-white">
+                <option value="40">40 km/h (山區道路/慢車道)</option>
+                <option value="50" selected>50 km/h (市區主要幹道)</option>
+                <option value="60">60 km/h (快速道路)</option>
+                <option value="70">70 km/h (快速公路/高架橋)</option>
+                <option value="80">80 km/h (市民/洲美高架)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-300 font-semibold mb-1">實際行車時速 (km/h)</label>
+              <input id="calcActualSpeed" type="number" min="10" max="200" value="63" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm text-white mono font-bold" />
+            </div>
+          </div>
+
+          <!-- Calculation Outcome Card -->
+          <div id="calcResultBox" class="mt-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs sm:text-sm space-y-1.5">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Overview Charts Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+          <h3 class="text-sm font-bold text-white mb-1">北北基桃各縣市執法點位統計分布</h3>
+          <p class="text-xs text-slate-400 mb-3">涵蓋臺北、新北、桃園、基隆全點位分布</p>
+          <div class="relative h-64">
+            <canvas id="chartDistricts"></canvas>
+          </div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+          <h3 class="text-sm font-bold text-white mb-1">全點位「速限級距」占比分析</h3>
+          <p class="text-xs text-slate-400 mb-3">各級道路速限標準與執法重心</p>
+          <div class="relative h-64">
+            <canvas id="chartSpeedLimits"></canvas>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Modal: Report / Add Custom Camera -->
+  <div id="modalReport" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-white">＋ 新增 / 回報測速點位</h3>
+        <button id="btnCloseModal" class="text-slate-400 hover:text-white text-lg">✕</button>
+      </div>
+
+      <form id="formAddCamera" class="space-y-3 text-xs sm:text-sm">
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">縣市</label>
+            <select id="addCity" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white">
+              <option value="臺北市">臺北市</option>
+              <option value="新北市" selected>新北市</option>
+              <option value="桃園市">桃園市</option>
+              <option value="基隆市">基隆市</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">執法類型</label>
+            <select id="addCategory" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white">
+              <option value="mobile" selected>移動式黑箱/三腳架</option>
+              <option value="fixed">固定式照相桿</option>
+              <option value="tech">科技執法</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">行政區 / 路段名稱</label>
+          <input id="addDistrict" type="text" required placeholder="例如：板橋區 / 中正路" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white" />
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">詳細設置位置</label>
+          <input id="addLocation" type="text" required placeholder="例如：新北大道二段與化成路口" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">拍攝方向</label>
+            <input id="addDirection" type="text" required placeholder="例如：北向南" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white" />
+          </div>
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">速限 (km/h)</label>
+            <select id="addSpeedLimit" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white">
+              <option value="40">40 km/h</option>
+              <option value="50" selected>50 km/h</option>
+              <option value="60">60 km/h</option>
+              <option value="70">70 km/h</option>
+              <option value="80">80 km/h</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">執法備註或提防要訣</label>
+          <input id="addNote" type="text" placeholder="例如：常於橋墩後方擺設三腳架" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white" />
+        </div>
+
+        <div class="pt-2 flex justify-end gap-2">
+          <button type="button" id="btnCancelModal" class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold">取消</button>
+          <button type="submit" class="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-500 font-bold">加入雷達</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Embedded All Cameras Dataset -->
+  <script>
+    const INITIAL_CAMERAS = [{"id": "F001", "code": "北市固-001", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "承德路3段敦煌路口", "lat": 25.074506, "lng": 121.519933, "district": "大同區", "direction": "南北雙向", "speedLimit": 50, "note": "官方公告固定桿（編號 1）", "city": "臺北市"}, {"id": "F002", "code": "北市固-002", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "環河北路2段昌吉街口", "lat": 25.065893, "lng": 121.508867, "district": "大同區", "direction": "南北雙向(北50/南60)", "speedLimit": 50, "note": "官方公告固定桿（編號 2）", "city": "臺北市"}, {"id": "F003", "code": "北市固-003", "category": "fixed", "typeLabel": "固定式照相", "func": "測速(兼闖紅燈)", "location": "台北橋機車道下橋(近民權西路與延平北路口)", "lat": 25.062879, "lng": 121.510832, "district": "大同區", "direction": "西向東", "speedLimit": 40, "note": "官方公告固定桿（編號 3）", "city": "臺北市"}, {"id": "F004", "code": "北市固-004", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "承德路2段錦西街口", "lat": 25.060421, "lng": 121.518233, "district": "大同區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 4）", "city": "臺北市"}, {"id": "F005", "code": "北市固-005", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "承德路市民大道口(東北)", "lat": 25.048871, "lng": 121.516765, "district": "大同區", "direction": "東向西", "speedLimit": 40, "note": "官方公告固定桿（編號 5）", "city": "臺北市"}, {"id": "F006", "code": "北市固-006", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈及路口淨空", "location": "民生西路承德路2段口", "lat": 25.05695, "lng": 121.518191, "district": "大同區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 6）", "city": "臺北市"}, {"id": "F007", "code": "北市固-007", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "艋舺大道297號前(台糖公司前)", "lat": 25.033017, "lng": 121.496684, "district": "萬華區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 7）", "city": "臺北市"}, {"id": "F008", "code": "北市固-008", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "萬板大橋台北端引道", "lat": 25.030513, "lng": 121.489712, "district": "萬華區", "direction": "往台北市", "speedLimit": 50, "note": "官方公告固定桿（編號 8）", "city": "臺北市"}, {"id": "F009", "code": "北市固-009", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "環河南路快速道路中興橋匝道(環河南路2段250巷口)", "lat": 25.043785, "lng": 121.500422, "district": "萬華區", "direction": "北向南", "speedLimit": 60, "note": "官方公告固定桿（編號 9）", "city": "臺北市"}, {"id": "F010", "code": "北市固-010", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "和平西路3段199號前", "lat": 25.035312, "lng": 121.497193, "district": "萬華區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 10）", "city": "臺北市"}, {"id": "F011", "code": "北市固-011", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "環河南路1段77號對面", "lat": 25.044546, "lng": 121.501135, "district": "萬華區", "direction": "北向南", "speedLimit": 40, "note": "官方公告固定桿（編號 11）", "city": "臺北市"}, {"id": "F012", "code": "北市固-012", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "華中橋頭萬大路口", "lat": 25.019086, "lng": 121.497152, "district": "萬華區", "direction": "南北雙向", "speedLimit": 50, "note": "官方公告固定桿（編號 12）", "city": "臺北市"}, {"id": "F013", "code": "北市固-013", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "中華路1段406號廣場前", "lat": 25.040015, "lng": 121.507492, "district": "萬華區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 13）", "city": "臺北市"}, {"id": "F014", "code": "北市固-014", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "貴陽疏散門外堤外便道", "lat": 25.041514, "lng": 121.499057, "district": "萬華區", "direction": "南向北", "speedLimit": 40, "note": "官方公告固定桿（編號 14）", "city": "臺北市"}, {"id": "F015", "code": "北市固-015", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "艋舺大道120巷口", "lat": 25.033288, "lng": 121.502539, "district": "萬華區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 15）", "city": "臺北市"}, {"id": "F016", "code": "北市固-016", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "艋舺大道雙園街口", "lat": 25.030278, "lng": 121.493231, "district": "萬華區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 16）", "city": "臺北市"}, {"id": "F017", "code": "北市固-017", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "中華路1段貴陽路口", "lat": 25.03895, "lng": 121.507326, "district": "萬華區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 17）", "city": "臺北市"}, {"id": "F018", "code": "北市固-018", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "西園路2段140巷口", "lat": 25.029903, "lng": 121.496243, "district": "萬華區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 18）", "city": "臺北市"}, {"id": "F019", "code": "北市固-019", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈、測速", "location": "西園路2段光復橋頭往新北市", "lat": 25.026109, "lng": 121.492747, "district": "萬華區", "direction": "東西雙向", "speedLimit": 50, "note": "官方公告固定桿（編號 19）", "city": "臺北市"}, {"id": "F020", "code": "北市固-020", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "建國高架道長春路入口", "lat": 25.052686, "lng": 121.536716, "district": "中山區", "direction": "北向南", "speedLimit": 70, "note": "官方公告固定桿（編號 20）", "city": "臺北市"}, {"id": "F021", "code": "北市固-021", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "新生北路高架道民族東路入口", "lat": 25.066527, "lng": 121.527737, "district": "中山區", "direction": "北向南", "speedLimit": 70, "note": "官方公告固定桿（編號 21）", "city": "臺北市"}, {"id": "F022", "code": "北市固-022", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "復興北路車行地下道北出口處", "lat": 25.07179, "lng": 121.544329, "district": "中山區", "direction": "南向北", "speedLimit": 40, "note": "官方公告固定桿（編號 22）", "city": "臺北市"}, {"id": "F023", "code": "北市固-023", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "樂群一路基湖路口西往東天橋下(金泰公園)", "lat": 25.076566, "lng": 121.566353, "district": "中山區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 23）", "city": "臺北市"}, {"id": "F024", "code": "北市固-024", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "明水路325號前", "lat": 25.077626, "lng": 121.540768, "district": "中山區", "direction": "東西雙向", "speedLimit": 50, "note": "官方公告固定桿（編號 24）", "city": "臺北市"}, {"id": "F025", "code": "北市固-025", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "市民高架道下建國南路", "lat": 25.044632, "lng": 121.542444, "district": "中山區", "direction": "東西雙向", "speedLimit": 80, "note": "官方公告固定桿（編號 25）", "city": "臺北市"}, {"id": "F026", "code": "北市固-026", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "北安路海軍司令部前", "lat": 25.077901, "lng": 121.536386, "district": "中山區", "direction": "東西雙向", "speedLimit": 50, "note": "官方公告固定桿（編號 26）", "city": "臺北市"}, {"id": "F027", "code": "北市固-027", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "市民大道(高架道)京站百貨前", "lat": 25.048208, "lng": 121.519834, "district": "中山區", "direction": "西向東", "speedLimit": 80, "note": "官方公告固定桿（編號 27）", "city": "臺北市"}, {"id": "F028", "code": "北市固-028", "category": "fixed", "typeLabel": "固定式照相", "func": "測速(兼闖紅燈)", "location": "建國北路農安街口", "lat": 25.065, "lng": 121.536568, "district": "中山區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 28）", "city": "臺北市"}, {"id": "F029", "code": "北市固-029", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "民權東路建國北路口", "lat": 25.062083, "lng": 121.537167, "district": "中山區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 29）", "city": "臺北市"}, {"id": "F030", "code": "北市固-030", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "民生東路3段遼寧街口(台北大學前)", "lat": 25.057792, "lng": 121.541891, "district": "中山區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 30）", "city": "臺北市"}, {"id": "F031", "code": "北市固-031", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "北安路明水路口(劍南路口前端)", "lat": 25.085655, "lng": 121.55306, "district": "中山區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 31）", "city": "臺北市"}, {"id": "F032", "code": "北市固-032", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "松江路民族東路口", "lat": 25.068496, "lng": 121.533101, "district": "中山區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 32）", "city": "臺北市"}, {"id": "F033", "code": "北市固-033", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "建國北路1段長安東路口", "lat": 25.048148, "lng": 121.536855, "district": "中山區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 33）", "city": "臺北市"}, {"id": "F034", "code": "北市固-034", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "復興北路民生東路口", "lat": 25.058132, "lng": 121.544131, "district": "中山區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 34）", "city": "臺北市"}, {"id": "F035", "code": "北市固-035", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "中山北路2段民生西路口", "lat": 25.058358, "lng": 121.522798, "district": "中山區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 35）", "city": "臺北市"}, {"id": "F036", "code": "北市固-036", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "松江路農安街口", "lat": 25.064462, "lng": 121.533262, "district": "中山區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 36）", "city": "臺北市"}, {"id": "F037", "code": "北市固-037", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈、測速", "location": "中山北路2段長春路口", "lat": 25.054732, "lng": 121.52277, "district": "中山區", "direction": "南往北", "speedLimit": 50, "note": "官方公告固定桿（編號 37）", "city": "臺北市"}, {"id": "F038", "code": "北市固-038", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "基隆高架道下敦化南路段", "lat": 25.018502, "lng": 121.545923, "district": "大安區", "direction": "南向北", "speedLimit": 60, "note": "官方公告固定桿（編號 38）", "city": "臺北市"}, {"id": "F039", "code": "北市固-039", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "辛亥路3段157巷口(下北二高)", "lat": 25.01722, "lng": 121.548786, "district": "大安區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 39）", "city": "臺北市"}, {"id": "F040", "code": "北市固-040", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "新生南路金華街口", "lat": 25.030345, "lng": 121.53369, "district": "大安區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 40）", "city": "臺北市"}, {"id": "F041", "code": "北市固-041", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "和平東路1段國立師範大學前", "lat": 25.026733, "lng": 121.526767, "district": "大安區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 41）", "city": "臺北市"}, {"id": "F042", "code": "北市固-042", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "建國南路2段179號前", "lat": 25.027726, "lng": 121.537842, "district": "大安區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 42）", "city": "臺北市"}, {"id": "F043", "code": "北市固-043", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "市民大道3段214號前", "lat": 25.04447, "lng": 121.539954, "district": "大安區", "direction": "西向東", "speedLimit": 40, "note": "官方公告固定桿（編號 43）", "city": "臺北市"}, {"id": "F044", "code": "北市固-044", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "基隆路3段長興街口", "lat": 25.016597, "lng": 121.543806, "district": "大安區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 44）", "city": "臺北市"}, {"id": "F045", "code": "北市固-045", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "建國高架道和平東路上方", "lat": 25.026122, "lng": 121.537636, "district": "大安區", "direction": "北向南", "speedLimit": 70, "note": "官方公告固定桿（編號 45）", "city": "臺北市"}, {"id": "F046", "code": "北市固-046", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "新生南路3段58號台大側門", "lat": 25.020033, "lng": 121.534073, "district": "大安區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 46）", "city": "臺北市"}, {"id": "F047", "code": "北市固-047", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "市民高架道下光復南路", "lat": 25.044479, "lng": 121.552151, "district": "大安區", "direction": "東西雙向", "speedLimit": 80, "note": "官方公告固定桿（編號 47）", "city": "臺北市"}, {"id": "F048", "code": "北市固-048", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "辛亥路2段台大語文中心(快車道)", "lat": 25.021256, "lng": 121.541034, "district": "大安區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 48）", "city": "臺北市"}, {"id": "F049", "code": "北市固-049", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "和平東路3段228巷口", "lat": 25.022591, "lng": 121.554377, "district": "大安區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 49）", "city": "臺北市"}, {"id": "F050", "code": "北市固-050", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "敦化南路2段和平東路口", "lat": 25.024922, "lng": 121.548659, "district": "大安區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 50）", "city": "臺北市"}, {"id": "F051", "code": "北市固-051", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈及路口淨空", "location": "光復南路信義路4段口北側", "lat": 25.033197, "lng": 121.556977, "district": "大安區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 51）", "city": "臺北市"}, {"id": "F052", "code": "北市固-052", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "中華路1段53號前", "lat": 25.043089, "lng": 121.508633, "district": "中正區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 52）", "city": "臺北市"}, {"id": "F053", "code": "北市固-053", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "仁愛路2段61號前右車道(臨沂街口)", "lat": 25.038274, "lng": 121.530122, "district": "中正區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 53）", "city": "臺北市"}, {"id": "F054", "code": "北市固-054", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "中山南路近濟南路1段口", "lat": 25.042973, "lng": 121.518907, "district": "中正區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 54）", "city": "臺北市"}, {"id": "F055", "code": "北市固-055", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "重慶南路3段27巷口", "lat": 25.028558, "lng": 121.515632, "district": "中正區", "direction": "南北雙向", "speedLimit": 50, "note": "官方公告固定桿（編號 55）", "city": "臺北市"}, {"id": "F056", "code": "北市固-056", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "水源快速道路同安街口", "lat": 25.020859, "lng": 121.520177, "district": "中正區", "direction": "南向北", "speedLimit": 60, "note": "官方公告固定桿（編號 56）", "city": "臺北市"}, {"id": "F057", "code": "北市固-057", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "中山南路濟南路口", "lat": 25.042996, "lng": 121.518904, "district": "中正區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 57）", "city": "臺北市"}, {"id": "F058", "code": "北市固-058", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "金山南路銅山街口", "lat": 25.039274, "lng": 121.528687, "district": "中正區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 58）", "city": "臺北市"}, {"id": "F059", "code": "北市固-059", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "忠孝東路1段林森南路口", "lat": 25.04475, "lng": 121.523673, "district": "中正區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 59）", "city": "臺北市"}, {"id": "F060", "code": "北市固-060", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "和平西路2段寧波西街口", "lat": 25.028826, "lng": 121.512524, "district": "中正區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 60）", "city": "臺北市"}, {"id": "F061", "code": "北市固-061", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "重慶南路3段和平西路口", "lat": 25.027789, "lng": 121.515829, "district": "中正區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 61）", "city": "臺北市"}, {"id": "F062", "code": "北市固-062", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈、測速", "location": "和平西路寧波西街口", "lat": 25.029182, "lng": 121.5118, "district": "中正區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 62）", "city": "臺北市"}, {"id": "F063", "code": "北市固-063", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "民生東路4段97巷口", "lat": 25.057941, "lng": 121.551852, "district": "松山區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 63）", "city": "臺北市"}, {"id": "F064", "code": "北市固-064", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "復興北路車行地下道南出口處", "lat": 25.066841, "lng": 121.54431, "district": "松山區", "direction": "北向南", "speedLimit": 40, "note": "官方公告固定桿（編號 64）", "city": "臺北市"}, {"id": "F065", "code": "北市固-065", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "健康路300號前", "lat": 25.054264, "lng": 121.565636, "district": "松山區", "direction": "東西雙向", "speedLimit": 50, "note": "官方公告固定桿（編號 65）", "city": "臺北市"}, {"id": "F066", "code": "北市固-066", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "塔悠路近撫遠街261巷口", "lat": 25.062004, "lng": 121.5685, "district": "松山區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 66）", "city": "臺北市"}, {"id": "F067", "code": "北市固-067", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "民權東路4段民權公園前", "lat": 25.062106, "lng": 121.557465, "district": "松山區", "direction": "東西雙向", "speedLimit": 50, "note": "官方公告固定桿（編號 67）", "city": "臺北市"}, {"id": "F068", "code": "北市固-068", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "南京東路4段健康路口", "lat": 25.051692, "lng": 121.553037, "district": "松山區", "direction": "東西雙向", "speedLimit": 50, "note": "官方公告固定桿（編號 68）", "city": "臺北市"}, {"id": "F069", "code": "北市固-069", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "敦化南路八德路口", "lat": 25.04786, "lng": 121.548947, "district": "松山區", "direction": "南往北", "speedLimit": 50, "note": "官方公告固定桿（編號 69）", "city": "臺北市"}, {"id": "F070", "code": "北市固-070", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "民權東路4段三民路口", "lat": 25.062874, "lng": 121.563371, "district": "松山區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 70）", "city": "臺北市"}, {"id": "F071", "code": "北市固-071", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "市民大道5段50號前(近東寧路口)", "lat": 25.047627, "lng": 121.563972, "district": "信義區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 71）", "city": "臺北市"}, {"id": "F072", "code": "北市固-072", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "忠孝東路4段近逸仙路口", "lat": 25.041316, "lng": 121.559883, "district": "信義區", "direction": "東西雙向", "speedLimit": 50, "note": "官方公告固定桿（編號 72）", "city": "臺北市"}, {"id": "F073", "code": "北市固-073", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "基隆路二段109號前", "lat": 25.029061, "lng": 121.557309, "district": "信義區", "direction": "南往北", "speedLimit": 50, "note": "官方公告固定桿（編號 73）", "city": "臺北市"}, {"id": "F074", "code": "北市固-074", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "基隆路1段49號前", "lat": 25.047687, "lng": 121.568495, "district": "信義區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 74）", "city": "臺北市"}, {"id": "F075", "code": "北市固-075", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈、測速", "location": "永吉路松信路口", "lat": 25.045626, "lng": 121.572445, "district": "信義區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 75）", "city": "臺北市"}, {"id": "F076", "code": "北市固-076", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "松仁路松壽路口", "lat": 25.03615, "lng": 121.568355, "district": "信義區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 76）", "city": "臺北市"}, {"id": "F077", "code": "北市固-077", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "基隆路松壽路口", "lat": 25.036201, "lng": 121.561335, "district": "信義區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 77）", "city": "臺北市"}, {"id": "F078", "code": "北市固-078", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "光復南路456巷口", "lat": 25.035776, "lng": 121.557489, "district": "信義區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 78）", "city": "臺北市"}, {"id": "F079", "code": "北市固-079", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "環河北路3段葫蘆街口", "lat": 25.082459, "lng": 121.507372, "district": "士林區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 79）", "city": "臺北市"}, {"id": "F080", "code": "北市固-080", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "仰德大道2段115巷口", "lat": 25.108241, "lng": 121.546019, "district": "士林區", "direction": "下山方向", "speedLimit": 40, "note": "官方公告固定桿（編號 80）", "city": "臺北市"}, {"id": "F081", "code": "北市固-081", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "仰德大道4段75號(格致中學前)", "lat": 25.132062, "lng": 121.546456, "district": "士林區", "direction": "上下山雙向", "speedLimit": 40, "note": "官方公告固定桿（編號 81）", "city": "臺北市"}, {"id": "F082", "code": "北市固-082", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "承德路4段百齡高中前", "lat": 25.086516, "lng": 121.522987, "district": "士林區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 82）", "city": "臺北市"}, {"id": "F083", "code": "北市固-083", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "仰德大道2段29巷口", "lat": 25.104058, "lng": 121.542504, "district": "士林區", "direction": "下山方向", "speedLimit": 40, "note": "官方公告固定桿（編號 83）", "city": "臺北市"}, {"id": "F084", "code": "北市固-084", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "環河北路2段近敦煌路口", "lat": 25.078972, "lng": 121.50826, "district": "士林區", "direction": "北向南", "speedLimit": 60, "note": "官方公告固定桿（編號 84）", "city": "臺北市"}, {"id": "F085", "code": "北市固-085", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "承德路4段通河街口", "lat": 25.080355, "lng": 121.522216, "district": "士林區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 85）", "city": "臺北市"}, {"id": "F086", "code": "北市固-086", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "承德路4段福港街口", "lat": 25.089863, "lng": 121.518183, "district": "士林區", "direction": "北往南", "speedLimit": 50, "note": "官方公告固定桿（編號 86）", "city": "臺北市"}, {"id": "F087", "code": "北市固-087", "category": "fixed", "typeLabel": "固定式照相", "func": "測速(兼闖紅燈)", "location": "仰德大道3段陽明山國小前", "lat": 25.119882, "lng": 121.552974, "district": "士林區", "direction": "往下山方向", "speedLimit": 40, "note": "官方公告固定桿（編號 87）", "city": "臺北市"}, {"id": "F088", "code": "北市固-088", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "中正路基河路口", "lat": 25.09323, "lng": 121.519831, "district": "士林區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 88）", "city": "臺北市"}, {"id": "F089", "code": "北市固-089", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "中正路重慶北路口", "lat": 25.087073, "lng": 121.511207, "district": "士林區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 89）", "city": "臺北市"}, {"id": "F090", "code": "北市固-090", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "中山北路5段378巷(消防隊前)", "lat": 25.089989, "lng": 121.527573, "district": "士林區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 90）", "city": "臺北市"}, {"id": "F091", "code": "北市固-091", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈、測速", "location": "中山北路5段中正路口", "lat": 25.096157, "lng": 121.527769, "district": "士林區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 91）", "city": "臺北市"}, {"id": "F092", "code": "北市固-092", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈及路口淨空", "location": "中山北路4段通河街口", "lat": 25.079514, "lng": 121.524533, "district": "士林區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 92）", "city": "臺北市"}, {"id": "F093", "code": "北市固-093", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "行義路241號前", "lat": 25.134835, "lng": 121.528679, "district": "北投區", "direction": "北向南", "speedLimit": 40, "note": "官方公告固定桿（編號 93）", "city": "臺北市"}, {"id": "F094", "code": "北市固-094", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "竹子湖路2-2號對面(陽金公路53號燈桿後方)", "lat": 25.164914, "lng": 121.543719, "district": "北投區", "direction": "往臺北市區", "speedLimit": 40, "note": "官方公告固定桿（編號 94）", "city": "臺北市"}, {"id": "F095", "code": "北市固-095", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "承德路6段(北向南)", "lat": 25.105191, "lng": 121.511937, "district": "北投區", "direction": "北向南", "speedLimit": 60, "note": "官方公告固定桿（編號 95）", "city": "臺北市"}, {"id": "F096", "code": "北市固-096", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "洲美快速道路(南向避車彎處)", "lat": 25.10799, "lng": 121.498782, "district": "北投區", "direction": "北向南", "speedLimit": 80, "note": "官方公告固定桿（編號 96）", "city": "臺北市"}, {"id": "F097", "code": "北市固-097", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "承德路6段(南往北)", "lat": 25.103947, "lng": 121.512089, "district": "北投區", "direction": "南往北", "speedLimit": 60, "note": "官方公告固定桿（編號 97）", "city": "臺北市"}, {"id": "F098", "code": "北市固-098", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "洲美快速道路(北向避車彎處)", "lat": 25.105972, "lng": 121.498965, "district": "北投區", "direction": "南向北", "speedLimit": 80, "note": "官方公告固定桿（編號 98）", "city": "臺北市"}, {"id": "F099", "code": "北市固-099", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "大業路412號前", "lat": 25.13034, "lng": 121.496738, "district": "北投區", "direction": "南向北", "speedLimit": 60, "note": "官方公告固定桿（編號 99）", "city": "臺北市"}, {"id": "F100", "code": "北市固-100", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "大度路往台北方向", "lat": 25.12242, "lng": 121.477758, "district": "北投區", "direction": "北向南", "speedLimit": 70, "note": "官方公告固定桿（編號 100）", "city": "臺北市"}, {"id": "F101", "code": "北市固-101", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "大度路往淡水方向", "lat": 25.122393, "lng": 121.480361, "district": "北投區", "direction": "南向北", "speedLimit": 70, "note": "官方公告固定桿（編號 101）", "city": "臺北市"}, {"id": "F102", "code": "北市固-102", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "學園路(往關渡)臺北藝術大學大門口", "lat": 25.130113, "lng": 121.465911, "district": "北投區", "direction": "下山方向", "speedLimit": 40, "note": "官方公告固定桿（編號 102）", "city": "臺北市"}, {"id": "F103", "code": "北市固-103", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "立賢路101號前", "lat": 25.114412, "lng": 121.502511, "district": "北投區", "direction": "南往北", "speedLimit": 50, "note": "官方公告固定桿（編號 103）", "city": "臺北市"}, {"id": "F104", "code": "北市固-104", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "承德路7段吉利街口", "lat": 25.117606, "lng": 121.503632, "district": "北投區", "direction": "北向南", "speedLimit": 60, "note": "官方公告固定桿（編號 104）", "city": "臺北市"}, {"id": "F105", "code": "北市固-105", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "文林北路明德路口", "lat": 25.106381, "lng": 121.516309, "district": "北投區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 105）", "city": "臺北市"}, {"id": "F106", "code": "北市固-106", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "大度路大業路口", "lat": 25.121589, "lng": 121.499399, "district": "北投區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 106）", "city": "臺北市"}, {"id": "F107", "code": "北市固-107", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "信義快速道路文山隧道往南出口處", "lat": 25.008942, "lng": 121.581172, "district": "文山區", "direction": "北向南", "speedLimit": 70, "note": "官方公告固定桿（編號 107）", "city": "臺北市"}, {"id": "F108", "code": "北市固-108", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "木柵路5段近100之1號", "lat": 24.999096, "lng": 121.591396, "district": "文山區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 108）", "city": "臺北市"}, {"id": "F109", "code": "北市固-109", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "辛亥路6段懷恩隧道出口處(往木柵)", "lat": 24.991691, "lng": 121.551479, "district": "文山區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 109）", "city": "臺北市"}, {"id": "F110", "code": "北市固-110", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "水源快速道路下景福匝道口(上層往南)", "lat": 24.999305, "lng": 121.535252, "district": "文山區", "direction": "北向南", "speedLimit": 60, "note": "官方公告固定桿（編號 110）", "city": "臺北市"}, {"id": "F111", "code": "北市固-111", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "羅斯福路6段226號前", "lat": 24.992584, "lng": 121.540721, "district": "文山區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 111）", "city": "臺北市"}, {"id": "F112", "code": "北市固-112", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "辛亥路4段辛亥隧道出口", "lat": 25.009753, "lng": 121.557374, "district": "文山區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 112）", "city": "臺北市"}, {"id": "F113", "code": "北市固-113", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "羅斯福路5段240號前(近興隆路口)", "lat": 25.001501, "lng": 121.539116, "district": "文山區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 113）", "city": "臺北市"}, {"id": "F114", "code": "北市固-114", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "羅斯福路6段469巷口(近育英街口)", "lat": 24.989755, "lng": 121.539663, "district": "文山區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 114）", "city": "臺北市"}, {"id": "F115", "code": "北市固-115", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "辛亥路7段光輝路50巷口", "lat": 24.985035, "lng": 121.554059, "district": "文山區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 115）", "city": "臺北市"}, {"id": "F116", "code": "北市固-116", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "木柵路1段和興路口", "lat": 24.986691, "lng": 121.545788, "district": "文山區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 116）", "city": "臺北市"}, {"id": "F117", "code": "北市固-117", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "木柵路5段萬福橋頭", "lat": 25.003074, "lng": 121.584407, "district": "文山區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 117）", "city": "臺北市"}, {"id": "F118", "code": "北市固-118", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "市民大道8段東南街口", "lat": 25.054188, "lng": 121.61327, "district": "南港區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 118）", "city": "臺北市"}, {"id": "F119", "code": "北市固-119", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "忠孝東路7段511號前", "lat": 25.052638, "lng": 121.611548, "district": "南港區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 119）", "city": "臺北市"}, {"id": "F120", "code": "北市固-120", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "市民大道7段近昆陽街口", "lat": 25.050997, "lng": 121.591796, "district": "南港區", "direction": "東往西", "speedLimit": 50, "note": "官方公告固定桿（編號 120）", "city": "臺北市"}, {"id": "F121", "code": "北市固-121", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "三重路19-5號前", "lat": 25.057376, "lng": 121.614019, "district": "南港區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 121）", "city": "臺北市"}, {"id": "F122", "code": "北市固-122", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "市民大道7段東新街往東約100公尺處(忠孝東路6段159巷口)", "lat": 25.049971, "lng": 121.586234, "district": "南港區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 122）", "city": "臺北市"}, {"id": "F123", "code": "北市固-123", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "市民大道8段500號前", "lat": 25.053938, "lng": 121.612338, "district": "南港區", "direction": "西往東", "speedLimit": 50, "note": "官方公告固定桿（編號 123）", "city": "臺北市"}, {"id": "F124", "code": "北市固-124", "category": "fixed", "typeLabel": "固定式照相", "func": "測速(兼闖紅燈)", "location": "忠孝東路6段159巷口", "lat": 25.048782, "lng": 121.586844, "district": "南港區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 124）", "city": "臺北市"}, {"id": "F125", "code": "北市固-125", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "金湖路200號前", "lat": 25.077843, "lng": 121.600241, "district": "內湖區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 125）", "city": "臺北市"}, {"id": "F126", "code": "北市固-126", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "文德路66巷口", "lat": 25.078455, "lng": 121.580945, "district": "內湖區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 126）", "city": "臺北市"}, {"id": "F127", "code": "北市固-127", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "環東大道(南京東路6段368巷口上方)", "lat": 25.059779, "lng": 121.586378, "district": "內湖區", "direction": "東向西", "speedLimit": 80, "note": "官方公告固定桿（編號 127）", "city": "臺北市"}, {"id": "F128", "code": "北市固-128", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "潭美街新明路460巷", "lat": 25.053399, "lng": 121.578538, "district": "內湖區", "direction": "西向東", "speedLimit": 40, "note": "官方公告固定桿（編號 128）", "city": "臺北市"}, {"id": "F129", "code": "北市固-129", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "行善路233號前", "lat": 25.061037, "lng": 121.583295, "district": "內湖區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 129）", "city": "臺北市"}, {"id": "F130", "code": "北市固-130", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "成功路2段373號前", "lat": 25.074657, "lng": 121.589992, "district": "內湖區", "direction": "北向南", "speedLimit": 50, "note": "官方公告固定桿（編號 130）", "city": "臺北市"}, {"id": "F131", "code": "北市固-131", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "內湖路1段324號前", "lat": 25.081779, "lng": 121.570057, "district": "內湖區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 131）", "city": "臺北市"}, {"id": "F132", "code": "北市固-132", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "成功路5段152巷口", "lat": 25.083038, "lng": 121.604091, "district": "內湖區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 132）", "city": "臺北市"}, {"id": "F133", "code": "北市固-133", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "民權東路6段423巷口", "lat": 25.071282, "lng": 121.604239, "district": "內湖區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 133）", "city": "臺北市"}, {"id": "F134", "code": "北市固-134", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "潭美街223號對面", "lat": 25.056156, "lng": 121.585624, "district": "內湖區", "direction": "東西雙向", "speedLimit": 40, "note": "官方公告固定桿（編號 134）", "city": "臺北市"}, {"id": "F135", "code": "北市固-135", "category": "fixed", "typeLabel": "固定式照相", "func": "測速", "location": "民權東路6段228號前", "lat": 25.066791, "lng": 121.599696, "district": "內湖區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 135）", "city": "臺北市"}, {"id": "F136", "code": "北市固-136", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "瑞光路199號前(近陽光街口)", "lat": 25.073567, "lng": 121.579422, "district": "內湖區", "direction": "南向北", "speedLimit": 50, "note": "官方公告固定桿（編號 136）", "city": "臺北市"}, {"id": "F137", "code": "北市固-137", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "成功路2段250巷口", "lat": 25.065816, "lng": 121.590493, "district": "內湖區", "direction": "往內湖方向", "speedLimit": 50, "note": "官方公告固定桿（編號 137）", "city": "臺北市"}, {"id": "F138", "code": "北市固-138", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "環山路1段136巷口", "lat": 25.086477, "lng": 121.569232, "district": "內湖區", "direction": "東向西", "speedLimit": 50, "note": "官方公告固定桿（編號 138）", "city": "臺北市"}, {"id": "F139", "code": "北市固-139", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "內湖路1段120巷", "lat": 25.083341, "lng": 121.563241, "district": "內湖區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 139）", "city": "臺北市"}, {"id": "F140", "code": "北市固-140", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "南京東路6段新明路426巷口", "lat": 25.055605, "lng": 121.578882, "district": "內湖區", "direction": "西向東", "speedLimit": 40, "note": "官方公告固定桿（編號 140）", "city": "臺北市"}, {"id": "F141", "code": "北市固-141", "category": "fixed", "typeLabel": "固定式照相", "func": "闖紅燈", "location": "民權東路6段136巷口", "lat": 25.069088, "lng": 121.588036, "district": "內湖區", "direction": "西向東", "speedLimit": 50, "note": "官方公告固定桿（編號 141）", "city": "臺北市"}, {"id": "F142", "code": "北市固-142", "category": "interval", "typeLabel": "區間測速", "func": "區間測速及跨越雙白線", "location": "自強隧道(全段區間平均速率)", "lat": 25.090601, "lng": 121.549256, "district": "士林區", "direction": "南北雙向", "speedLimit": 50, "note": "雙向區間平均速率偵測及跨越雙白線取締", "city": "臺北市"}, {"id": "F143", "code": "北市固-143", "category": "interval", "typeLabel": "區間測速", "func": "區間測速及跨越雙白線", "location": "辛亥隧道(全段區間平均速率)", "lat": 25.011714, "lng": 121.555352, "district": "大安區", "direction": "南北雙向", "speedLimit": 50, "note": "雙向區間平均速率偵測及跨越雙白線取締", "city": "臺北市"}, {"id": "M01", "code": "北市移-01", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "承德路敦煌路口(往北)", "lat": 25.0748, "lng": 121.5198, "district": "大同區", "direction": "南向北", "speedLimit": 50, "note": "常設於分隔島或路側三腳架", "city": "臺北市"}, {"id": "M02", "code": "北市移-02", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "承德路二段(南北雙向機動點)", "lat": 25.0585, "lng": 121.5182, "district": "大同區", "direction": "南北雙向", "speedLimit": 50, "note": "平時日間、夜間機動架設", "city": "臺北市"}, {"id": "M03", "code": "北市移-03", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "承德路三段(南北雙向機動點)", "lat": 25.0685, "lng": 121.5188, "district": "大同區", "direction": "南北雙向", "speedLimit": 50, "note": "直線加速路段重點取締", "city": "臺北市"}, {"id": "M04", "code": "北市移-04", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "重慶北路三段(南北雙向)", "lat": 25.0715, "lng": 121.5136, "district": "大同區", "direction": "南北雙向", "speedLimit": 50, "note": "近交流道下橋直線段", "city": "臺北市"}, {"id": "M05", "code": "北市移-05", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "環河北路二段至三段(堤外便道及平面)", "lat": 25.071, "lng": 121.5082, "district": "大同區", "direction": "南北雙向", "speedLimit": 50, "note": "河濱便道與平面道路重點", "city": "臺北市"}, {"id": "M06", "code": "北市移-06", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "通河西街1段2號(南北雙向)", "lat": 25.0792, "lng": 121.5112, "district": "大同區", "direction": "南北雙向", "speedLimit": 40, "note": "堤外道路機車/汽車超速熱點", "city": "臺北市"}, {"id": "M07", "code": "北市移-07", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "哈密街59巷21弄51號周邊", "lat": 25.0732, "lng": 121.5171, "district": "大同區", "direction": "東西雙向", "speedLimit": 40, "note": "巷弄減速執法點", "city": "臺北市"}, {"id": "M08", "code": "北市移-08", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "水源快速道路往新店(果菜市場上方)", "lat": 25.0185, "lng": 121.4945, "district": "萬華區", "direction": "北向南", "speedLimit": 60, "note": "高架彎道與下坡前重點機動測速", "city": "臺北市"}, {"id": "M09", "code": "北市移-09", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "水源快速道路往南(馬場町紀念公園旁)", "lat": 25.0168, "lng": 121.5035, "district": "萬華區", "direction": "西向東", "speedLimit": 60, "note": "警車常駐避車彎雷射/三腳架", "city": "臺北市"}, {"id": "M10", "code": "北市移-10", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "環河快速道路往北(華中橋與光復橋間)", "lat": 25.0235, "lng": 121.4918, "district": "萬華區", "direction": "南向北", "speedLimit": 60, "note": "快速道路直線段機動黑箱", "city": "臺北市"}, {"id": "M11", "code": "北市移-11", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "華中橋(往台北/往中和雙向)", "lat": 25.0155, "lng": 121.4932, "district": "萬華區", "direction": "東西雙向", "speedLimit": 50, "note": "下橋引道超速取締", "city": "臺北市"}, {"id": "M12", "code": "北市移-12", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "樂群一路(東向西)", "lat": 25.0772, "lng": 121.5585, "district": "中山區", "direction": "東向西", "speedLimit": 50, "note": "大直重劃區寬敞直線段", "city": "臺北市"}, {"id": "M13", "code": "北市移-13", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "新生高架道往北(民族東路上方)", "lat": 25.0688, "lng": 121.5276, "district": "中山區", "direction": "南向北", "speedLimit": 70, "note": "高架橋避車彎機動雷射", "city": "臺北市"}, {"id": "M14", "code": "北市移-14", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "新生高架道往北(民權東路上方)", "lat": 25.0628, "lng": 121.5279, "district": "中山區", "direction": "南向北", "speedLimit": 70, "note": "高架橋避車彎機動雷射", "city": "臺北市"}, {"id": "M15", "code": "北市移-15", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "新生高架道往北(民生東路上方)", "lat": 25.058, "lng": 121.528, "district": "中山區", "direction": "南向北", "speedLimit": 70, "note": "高架橋避車彎機動雷射", "city": "臺北市"}, {"id": "M16", "code": "北市移-16", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "中山北路二段45巷口(南往北)", "lat": 25.0542, "lng": 121.5226, "district": "中山區", "direction": "南向北", "speedLimit": 50, "note": "林蔭大道慢車道/快車道交界", "city": "臺北市"}, {"id": "M17", "code": "北市移-17", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "北安路458巷口(北往南)", "lat": 25.0805, "lng": 121.5442, "district": "中山區", "direction": "北向南", "speedLimit": 50, "note": "大直北安路下坡直線段", "city": "臺北市"}, {"id": "M18", "code": "北市移-18", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "濱江街(西往東)", "lat": 25.0712, "lng": 121.5398, "district": "中山區", "direction": "西向東", "speedLimit": 50, "note": "松指部/機場外圍直線段", "city": "臺北市"}, {"id": "M19", "code": "北市移-19", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "中華路一段53號前(右側道及快車道)", "lat": 25.0422, "lng": 121.5082, "district": "中正區", "direction": "南向北", "speedLimit": 50, "note": "搭配固定桿前後機動補強", "city": "臺北市"}, {"id": "M20", "code": "北市移-20", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "金山南路銅山街口(往北)", "lat": 25.0398, "lng": 121.5285, "district": "中正區", "direction": "南向北", "speedLimit": 50, "note": "新生高架下橋延伸段", "city": "臺北市"}, {"id": "M21", "code": "北市移-21", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "中山南路濟南路口(往北)", "lat": 25.0435, "lng": 121.519, "district": "中正區", "direction": "南向北", "speedLimit": 50, "note": "立法院旁寬敞幹道", "city": "臺北市"}, {"id": "M22", "code": "北市移-22", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "中華路貴陽街口(往北)", "lat": 25.0392, "lng": 121.5075, "district": "中正區", "direction": "南向北", "speedLimit": 50, "note": "西門町外圍幹道", "city": "臺北市"}, {"id": "M23", "code": "北市移-23", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "羅斯福路二段174巷與羅斯福路口(往南)", "lat": 25.0235, "lng": 121.5245, "district": "中正區", "direction": "北向南", "speedLimit": 50, "note": "古亭至公館直線段", "city": "臺北市"}, {"id": "M24", "code": "北市移-24", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "汀州路3段24巷口", "lat": 25.0195, "lng": 121.529, "district": "中正區", "direction": "東西雙向", "speedLimit": 40, "note": "台大水源校區外圍", "city": "臺北市"}, {"id": "M25", "code": "北市移-25", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "和平西路2段98巷對面", "lat": 25.0298, "lng": 121.5078, "district": "中正區", "direction": "東西雙向", "speedLimit": 50, "note": "植物園周邊幹道", "city": "臺北市"}, {"id": "M26", "code": "北市移-26", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "建國高架市立圖書館上方(往北)", "lat": 25.0285, "lng": 121.5377, "district": "大安區", "direction": "南向北", "speedLimit": 70, "note": "建國高架最常出沒移動雷射點", "city": "臺北市"}, {"id": "M27", "code": "北市移-27", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "建國高架道仁愛路上方(南北雙向)", "lat": 25.0378, "lng": 121.5374, "district": "大安區", "direction": "南北雙向", "speedLimit": 70, "note": "高架避車彎機動測速", "city": "臺北市"}, {"id": "M28", "code": "北市移-28", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "敦化南路二段(往南慢車道)", "lat": 25.0265, "lng": 121.5488, "district": "大安區", "direction": "北向南", "speedLimit": 50, "note": "林蔭分隔島隱蔽處三腳架", "city": "臺北市"}, {"id": "M29", "code": "北市移-29", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "辛亥路三段往西(近台大後門)", "lat": 25.0192, "lng": 121.5442, "district": "大安區", "direction": "東向西", "speedLimit": 50, "note": "下國3甲聯絡道減速區", "city": "臺北市"}, {"id": "M30", "code": "北市移-30", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "基隆路三段至四段(往南)", "lat": 25.0145, "lng": 121.5405, "district": "大安區", "direction": "北向南", "speedLimit": 50, "note": "台科大/公館高架下橋段", "city": "臺北市"}, {"id": "M31", "code": "北市移-31", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "市民大道三段至四段(東向西)", "lat": 25.0448, "lng": 121.5465, "district": "大安區", "direction": "東向西", "speedLimit": 40, "note": "平面側車道限速40極易超速", "city": "臺北市"}, {"id": "M32", "code": "北市移-32", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "信義路四段184號前", "lat": 25.0332, "lng": 121.5535, "district": "大安區", "direction": "西向東", "speedLimit": 50, "note": "單行道多車道直線段", "city": "臺北市"}, {"id": "M33", "code": "北市移-33", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "溫州街75號周邊", "lat": 25.0218, "lng": 121.5322, "district": "大安區", "direction": "南北雙向", "speedLimit": 30, "note": "大學里鄰里交通環境改善區", "city": "臺北市"}, {"id": "M34", "code": "北市移-34", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "市民大道六段67號旁(東往西)", "lat": 25.0488, "lng": 121.5712, "district": "松山區", "direction": "東向西", "speedLimit": 40, "note": "松山火車站周邊平面段", "city": "臺北市"}, {"id": "M35", "code": "北市移-35", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "塔悠路(南北雙向撫遠街口)", "lat": 25.0655, "lng": 121.5665, "district": "松山區", "direction": "南北雙向", "speedLimit": 50, "note": "基隆河畔彎道與直線段", "city": "臺北市"}, {"id": "M36", "code": "北市移-36", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "民權東路三段191巷1弄口(東往西)", "lat": 25.0622, "lng": 121.5478, "district": "松山區", "direction": "東向西", "speedLimit": 50, "note": "松山機場外圍寬敞路段", "city": "臺北市"}, {"id": "M37", "code": "北市移-37", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "敦化北路3號前", "lat": 25.0492, "lng": 121.5489, "district": "松山區", "direction": "南向北", "speedLimit": 50, "note": "小巨蛋旁林蔭大道", "city": "臺北市"}, {"id": "M38", "code": "北市移-38", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "市民大道5段東興路口", "lat": 25.048, "lng": 121.5648, "district": "松山區", "direction": "東西雙向", "speedLimit": 40, "note": "平面道路限速40重點取締", "city": "臺北市"}, {"id": "M39", "code": "北市移-39", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "忠孝東路四段國父紀念館往東", "lat": 25.0412, "lng": 121.5578, "district": "信義區", "direction": "西向東", "speedLimit": 50, "note": "大巨蛋與國父紀念館周邊", "city": "臺北市"}, {"id": "M40", "code": "北市移-40", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "忠孝東路、逸仙路口(東向西)", "lat": 25.0413, "lng": 121.5608, "district": "信義區", "direction": "東向西", "speedLimit": 50, "note": "市府轉運站前幹道", "city": "臺北市"}, {"id": "M41", "code": "北市移-41", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "松德路168巷口(東往西)", "lat": 25.0345, "lng": 121.5752, "district": "信義區", "direction": "東向西", "speedLimit": 50, "note": "象山/松德路下坡接平面", "city": "臺北市"}, {"id": "M42", "code": "北市移-42", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "松平路、松平路33巷口", "lat": 25.0315, "lng": 121.5645, "district": "信義區", "direction": "東西雙向", "speedLimit": 40, "note": "信義計畫區住宅區減速點", "city": "臺北市"}, {"id": "M43", "code": "北市移-43", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "延平北路八段(堤防便道)", "lat": 25.1065, "lng": 121.4912, "district": "士林區", "direction": "南北雙向", "speedLimit": 50, "note": "社子島環島與堤防便道", "city": "臺北市"}, {"id": "M44", "code": "北市移-44", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "重陽橋往台北下橋處", "lat": 25.0865, "lng": 121.5092, "district": "士林區", "direction": "西向東", "speedLimit": 50, "note": "下橋減速彎道後直線", "city": "臺北市"}, {"id": "M45", "code": "北市移-45", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "仰德大道一段42巷口對面(往下山方向)", "lat": 25.1012, "lng": 121.5398, "district": "士林區", "direction": "下山方向", "speedLimit": 40, "note": "陽明山下山長下坡重點取締", "city": "臺北市"}, {"id": "M46", "code": "北市移-46", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "仰德大道四段格致國中(往上山方向)", "lat": 25.1335, "lng": 121.5468, "district": "士林區", "direction": "上山方向", "speedLimit": 40, "note": "陽明山上山段機動三腳架", "city": "臺北市"}, {"id": "M47", "code": "北市移-47", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "至善路2段469號(往下山方向)", "lat": 25.1072, "lng": 121.5645, "district": "士林區", "direction": "東向西", "speedLimit": 50, "note": "外雙溪/故宮下山直線段", "city": "臺北市"}, {"id": "M48", "code": "北市移-48", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "至善路1段雙溪營區(往東)", "lat": 25.1015, "lng": 121.5532, "district": "士林區", "direction": "西向東", "speedLimit": 50, "note": "至善路入山直線段", "city": "臺北市"}, {"id": "M49", "code": "北市移-49", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "承德路四段2巷、通河街76巷口往東", "lat": 25.0808, "lng": 121.523, "district": "士林區", "direction": "西向東", "speedLimit": 40, "note": "劍潭周邊巷道", "city": "臺北市"}, {"id": "M50", "code": "北市移-50", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "大度路三段305號旁(往台北)及中段雙向", "lat": 25.1228, "lng": 121.4725, "district": "北投區", "direction": "東西雙向", "speedLimit": 70, "note": "大度路機車道/快車道分隔島", "city": "臺北市"}, {"id": "M51", "code": "北市移-51", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "大業路(往北近大興街口及北向南)", "lat": 25.1258, "lng": 121.4982, "district": "北投區", "direction": "南北雙向", "speedLimit": 60, "note": "北投市區聯絡幹道", "city": "臺北市"}, {"id": "M52", "code": "北市移-52", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "承德路六段(南北雙向近文承路口)", "lat": 25.1088, "lng": 121.5105, "district": "北投區", "direction": "南北雙向", "speedLimit": 60, "note": "石牌/北投寬敞八線道", "city": "臺北市"}, {"id": "M53", "code": "北市移-53", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "中央北路三段近220巷口(往北投)", "lat": 25.1375, "lng": 121.4845, "district": "北投區", "direction": "東向西", "speedLimit": 50, "note": "復興崗至關渡下坡段", "city": "臺北市"}, {"id": "M54", "code": "北市移-54", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "木柵路四段至五段(東西雙向)", "lat": 24.9985, "lng": 121.5825, "district": "文山區", "direction": "東西雙向", "speedLimit": 50, "note": "動物園外圍與萬福橋段", "city": "臺北市"}, {"id": "M55", "code": "北市移-55", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "辛亥路六段至七段(南北雙向)", "lat": 24.9875, "lng": 121.5528, "district": "文山區", "direction": "南北雙向", "speedLimit": 50, "note": "懷恩隧道南口延伸段", "city": "臺北市"}, {"id": "M56", "code": "北市移-56", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "萬芳路(東西雙向)", "lat": 24.9998, "lng": 121.5648, "district": "文山區", "direction": "東西雙向", "speedLimit": 50, "note": "木柵交流道聯絡道", "city": "臺北市"}, {"id": "M57", "code": "北市移-57", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "新光路二段(動物園前雙向)", "lat": 24.9965, "lng": 121.5785, "district": "文山區", "direction": "東西雙向", "speedLimit": 50, "note": "捷運動物園站外圍寬敞道路", "city": "臺北市"}, {"id": "M58", "code": "北市移-58", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "忠孝東路七段(近台北流行音樂中心西往東)", "lat": 25.0522, "lng": 121.6025, "district": "南港區", "direction": "西向東", "speedLimit": 50, "note": "北流外圍長直線段", "city": "臺北市"}, {"id": "M59", "code": "北市移-59", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "市民大道八段、向陽路口(西往東)", "lat": 25.0535, "lng": 121.5985, "district": "南港區", "direction": "西向東", "speedLimit": 50, "note": "南港調車場段平面道路", "city": "臺北市"}, {"id": "M60", "code": "北市移-60", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "經貿二路105巷口及南深路61號", "lat": 25.0588, "lng": 121.6162, "district": "南港區", "direction": "東西雙向", "speedLimit": 50, "note": "南港展覽館與山區聯絡道", "city": "臺北市"}, {"id": "M61", "code": "北市移-61", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "環東大道(南京東路六段368巷口上方)東向西", "lat": 25.0595, "lng": 121.5845, "district": "內湖區", "direction": "東向西", "speedLimit": 80, "note": "高架彎道與下坡測速熱點", "city": "臺北市"}, {"id": "M62", "code": "北市移-62", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "瑞光路、陽光街口(南向北)", "lat": 25.0738, "lng": 121.5792, "district": "內湖區", "direction": "南向北", "speedLimit": 50, "note": "內湖科技園區核心幹道", "city": "臺北市"}, {"id": "M63", "code": "北市移-63", "category": "mobile", "typeLabel": "移動式定點", "func": "移動式測速", "location": "民權東路六段423巷口(東向西)及成功路二段", "lat": 25.0705, "lng": 121.5985, "district": "內湖區", "direction": "東向西", "speedLimit": 50, "note": "三總周邊與成功交流道段", "city": "臺北市"}, {"id": "T01", "code": "北市科-01", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "基河路與劍潭路口(全市取締第1名)", "lat": 25.0842, "lng": 121.5242, "district": "士林區", "direction": "全路口多向", "speedLimit": 50, "note": "闖紅燈、不停讓行人、不依規定轉彎、違規停車、路口未淨空", "city": "臺北市"}, {"id": "T02", "code": "北市科-02", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "長安東路與建國北路口(全市取締第2名)", "lat": 25.0482, "lng": 121.5369, "district": "中山區", "direction": "全路口多向", "speedLimit": 50, "note": "闖紅燈、不停讓行人、不依規定轉彎、不依標誌標線號誌指示", "city": "臺北市"}, {"id": "T03", "code": "北市科-03", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "辛亥路與建國南路口(全市取締第3名)", "lat": 25.0218, "lng": 121.5378, "district": "大安區", "direction": "全路口多向", "speedLimit": 50, "note": "闖紅燈、不依標誌標線號誌指示行駛(下高架易違規)", "city": "臺北市"}, {"id": "T04", "code": "北市科-04", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "大度路與中央北路口(全市取締第4名)", "lat": 25.1245, "lng": 121.4682, "district": "北投區", "direction": "全路口多向", "speedLimit": 60, "note": "闖紅燈、不停讓行人、不依規定轉彎、不依標誌標線", "city": "臺北市"}, {"id": "T05", "code": "北市科-05", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "民權西路與延平北路口(全市取締第5名)", "lat": 25.0629, "lng": 121.5112, "district": "大同區", "direction": "全路口多向", "speedLimit": 50, "note": "闖紅燈、不停讓行人、汽車行駛機車道(上台北橋匝道)", "city": "臺北市"}, {"id": "T06", "code": "北市科-06", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "忠孝東路與敦化南路口", "lat": 25.0416, "lng": 121.5488, "district": "大安區", "direction": "全路口多向", "speedLimit": 50, "note": "闖紅燈、不停讓行人、違規停車、不依規定轉彎", "city": "臺北市"}, {"id": "T07", "code": "北市科-07", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "信義路與建國南路口", "lat": 25.0334, "lng": 121.5376, "district": "大安區", "direction": "全路口多向", "speedLimit": 50, "note": "闖紅燈、不停讓行人、不依規定轉彎", "city": "臺北市"}, {"id": "T08", "code": "北市科-08", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "和平東路與敦化南路口", "lat": 25.0249, "lng": 121.5486, "district": "大安區", "direction": "全路口多向", "speedLimit": 50, "note": "闖紅燈、不停讓行人、未保持路口淨空、不依規定轉彎", "city": "臺北市"}, {"id": "T09", "code": "北市科-09", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "忠孝東路與基隆路口", "lat": 25.0412, "lng": 121.5648, "district": "信義區", "direction": "全路口多向", "speedLimit": 50, "note": "闖紅燈、不停讓行人、不依規定轉彎、不依標誌標線", "city": "臺北市"}, {"id": "T10", "code": "北市科-10", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "市民高架道路(近臺北車站及轉運站上方)", "lat": 25.0485, "lng": 121.5175, "district": "中正區", "direction": "東西雙向", "speedLimit": 80, "note": "逾10噸大貨車違規行駛、機車違規行駛及行駛路肩", "city": "臺北市"}, {"id": "T11", "code": "北市科-11", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "建國高架道路(市民大道上方)", "lat": 25.0445, "lng": 121.5372, "district": "大安區", "direction": "南北雙向", "speedLimit": 70, "note": "逾10噸大貨車違規行駛、機車違規行駛及跨越雙白線", "city": "臺北市"}, {"id": "T12", "code": "北市科-12", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "港墘路與堤頂大道口", "lat": 25.0762, "lng": 121.5718, "district": "內湖區", "direction": "全路口多向", "speedLimit": 50, "note": "闖紅燈、不停讓行人、不依規定轉彎、路口未淨空", "city": "臺北市"}, {"id": "T13", "code": "北市科-13", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "民權東路與舊宗路、行忠路口", "lat": 25.0668, "lng": 121.5795, "district": "內湖區", "direction": "全路口多向", "speedLimit": 50, "note": "闖紅燈、不停讓行人、路口未淨空、跨越槽化線", "city": "臺北市"}, {"id": "T14", "code": "北市科-14", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "辛亥路與木柵路口", "lat": 24.9888, "lng": 121.5482, "district": "文山區", "direction": "全路口多向", "speedLimit": 50, "note": "闖紅燈、不停讓行人、不依規定轉彎", "city": "臺北市"}, {"id": "T15", "code": "北市科-15", "category": "tech", "typeLabel": "路口科技執法", "func": "科技執法", "location": "民權東路與敦化北路口", "lat": 25.0622, "lng": 121.5488, "district": "松山區", "direction": "全路口多向", "speedLimit": 50, "note": "闖紅燈、不停讓行人、不依規定轉彎、路口未淨空", "city": "臺北市"}, {"id": "NTPC-F001", "code": "新北固-001", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "板橋區", "location": "文化路二段與民生路二段口", "direction": "東向西", "speedLimit": 50, "lat": 25.02325, "lng": 121.46821, "feature": "測速照相", "note": "板橋華江橋下引道主幹道"}, {"id": "NTPC-F002", "code": "新北固-002", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "板橋區", "location": "縣民大道一段與民族路口", "direction": "西向東", "speedLimit": 50, "lat": 25.00892, "lng": 121.46215, "feature": "測速照相", "note": "板橋車站南側縣民大道"}, {"id": "NTPC-F003", "code": "新北固-003", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "板橋區", "location": "環河西路四段與華江六路口", "direction": "北向南", "speedLimit": 50, "lat": 25.03541, "lng": 121.48122, "feature": "測速照相", "note": "江翠北側重劃區外環道"}, {"id": "NTPC-F004", "code": "新北固-004", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "新莊區", "location": "新北大道二段(往三重方向)", "direction": "西向東", "speedLimit": 60, "lat": 25.06112, "lng": 121.46518, "feature": "測速照相", "note": "台1線高架下方平面快車道"}, {"id": "NTPC-F005", "code": "新北固-005", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "新莊區", "location": "中正路746巷口(往桃園方向)", "direction": "東向西", "speedLimit": 50, "lat": 25.02115, "lng": 121.41125, "feature": "測速照相", "note": "迴龍輔大段重要省道幹道"}, {"id": "NTPC-F006", "code": "新北固-006", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "三重區", "location": "重新路五段與光復路二段口", "direction": "西向東", "speedLimit": 50, "lat": 25.04512, "lng": 121.47218, "feature": "測速照相", "note": "重新橋三重端下橋處"}, {"id": "NTPC-F007", "code": "新北固-007", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "三重區", "location": "環河南路與福德南路口", "direction": "北向南", "speedLimit": 50, "lat": 25.06182, "lng": 121.50315, "feature": "測速照相", "note": "台北橋下環河幹道"}, {"id": "NTPC-F008", "code": "新北固-008", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "中和區", "location": "中正路與板南路口", "direction": "東向西", "speedLimit": 50, "lat": 24.99812, "lng": 121.49215, "feature": "測速照相", "note": "台64線高架橋下主要幹道"}, {"id": "NTPC-F009", "code": "新北固-009", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "永和區", "location": "環河西路二段與保生路口", "direction": "南向北", "speedLimit": 50, "lat": 25.01215, "lng": 121.50382, "feature": "測速照相", "note": "中正橋往永和新北環快段"}, {"id": "NTPC-F010", "code": "新北固-010", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "汐止區", "location": "新台五路一段與連興街口", "direction": "東向西", "speedLimit": 60, "lat": 25.06012, "lng": 121.65182, "feature": "測速照相", "note": "汐止遠雄購物中心前快車道"}, {"id": "NTPC-F011", "code": "新北固-011", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "汐止區", "location": "大同路一段與新台五路口", "direction": "南向北", "speedLimit": 50, "lat": 25.05612, "lng": 121.64218, "feature": "測速照相", "note": "南港接汐止主幹道入口"}, {"id": "NTPC-F012", "code": "新北固-012", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "新店區", "location": "北新路一段與中正路口", "direction": "北向南", "speedLimit": 50, "lat": 24.96815, "lng": 121.54122, "feature": "測速照相", "note": "新店捷運新店區公所站前"}, {"id": "NTPC-F013", "code": "新北固-013", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "新店區", "location": "環河路與中央路口", "direction": "南向北", "speedLimit": 60, "lat": 24.98125, "lng": 121.52815, "feature": "測速照相", "note": "水源快速道路接新店環河段"}, {"id": "NTPC-F014", "code": "新北固-014", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "淡水區", "location": "淡金路一段與新市一路口", "direction": "南向北", "speedLimit": 60, "lat": 25.17822, "lng": 121.44815, "feature": "測速照相", "note": "淡水往三芝淡金公路起點"}, {"id": "NTPC-F015", "code": "新北固-015", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "淡水區", "location": "中正東路二段近竹圍捷運站", "direction": "北向南", "speedLimit": 50, "lat": 25.13821, "lng": 121.45892, "feature": "測速照相", "note": "淡水往台北關渡方向必經瓶頸"}, {"id": "NTPC-F016", "code": "新北固-016", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "林口區", "location": "文化一路一段與仁愛路口", "direction": "南向北", "speedLimit": 50, "lat": 25.07812, "lng": 121.37815, "feature": "測速照相", "note": "林口交流道往長庚及市區幹道"}, {"id": "NTPC-F017", "code": "新北固-017", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "土城區", "location": "中央路三段與中華路二段口", "direction": "北向南", "speedLimit": 50, "lat": 24.96512, "lng": 121.43825, "feature": "測速照相", "note": "土城往三峽主要省道幹道"}, {"id": "NTPC-F018", "code": "新北固-018", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "三峽區", "location": "介壽路一段與大同路口", "direction": "東向西", "speedLimit": 50, "lat": 24.93815, "lng": 121.38125, "feature": "測速照相", "note": "三峽老街聯外台3線主要路口"}, {"id": "NTPC-F019", "code": "新北固-019", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "五股區", "location": "新五路二段與中興路三段口", "direction": "南向北", "speedLimit": 50, "lat": 25.06815, "lng": 121.44218, "feature": "測速照相", "note": "國道一號五股交流道聯絡道"}, {"id": "NTPC-F020", "code": "新北固-020", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "新北市", "district": "八里區", "location": "龍米路一段與觀海大道口", "direction": "南向北", "speedLimit": 50, "lat": 25.13812, "lng": 121.44125, "feature": "測速照相", "note": "關渡大橋往八里左岸台15線"}, {"id": "NTPC-I001", "code": "新北區-001", "category": "interval", "typeLabel": "區間測速", "func": "區間測速", "city": "新北市", "district": "新店區", "location": "北宜公路 19K 至 23.1K", "direction": "雙向", "speedLimit": 40, "lat": 24.93812, "lng": 121.58125, "feature": "區間測速", "note": "重機九彎十八拐熱點區間速率"}, {"id": "NTPC-I002", "code": "新北區-002", "category": "interval", "typeLabel": "區間測速", "func": "區間測速", "city": "新北市", "district": "台64線", "location": "台64線快速公路 25K 至 28K (中和至板橋段)", "direction": "東向西", "speedLimit": 70, "lat": 25.00812, "lng": 121.48815, "feature": "區間測速", "note": "台64線高架快速公路全日區間計時"}, {"id": "NTPC-M001", "code": "新北移-001", "category": "mobile", "typeLabel": "移動式黑箱", "func": "移動式測速", "city": "新北市", "district": "板橋區", "location": "新北環河快速道路板橋端避車彎", "direction": "南向北", "speedLimit": 60, "lat": 25.02812, "lng": 121.47815, "feature": "移動式雷達", "note": "警用三腳架與測速槍常設點"}, {"id": "NTPC-M002", "code": "新北移-002", "category": "mobile", "typeLabel": "移動式黑箱", "func": "移動式測速", "city": "新北市", "district": "淡水區", "location": "淡金路二段商工路口前", "direction": "南向北", "speedLimit": 60, "lat": 25.19125, "lng": 121.44218, "feature": "移動式雷達", "note": "筆直長下坡假日機動架設"}, {"id": "TYCG-F001", "code": "桃園固-001", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "桃園市", "district": "桃園區", "location": "春日路與三民路二段口", "direction": "北向南", "speedLimit": 50, "lat": 24.99815, "lng": 121.31218, "feature": "測速照相", "note": "桃園市中心縱貫幹道重要交叉路口"}, {"id": "TYCG-F002", "code": "桃園固-002", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "桃園市", "district": "桃園區", "location": "國際路二段與大興西路三段口", "direction": "南向北", "speedLimit": 50, "lat": 24.99612, "lng": 121.28815, "feature": "測速照相", "note": "國道二號南桃園交流道聯絡道"}, {"id": "TYCG-F003", "code": "桃園固-003", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "桃園市", "district": "中壢區", "location": "普忠路與環中東路口", "direction": "東向西", "speedLimit": 50, "lat": 24.96512, "lng": 121.24815, "feature": "測速照相", "note": "中壢工業區與內壢火車站聯外幹道"}, {"id": "TYCG-F004", "code": "桃園固-004", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "桃園市", "district": "中壢區", "location": "高鐵南路二段近領航南路(往青埔方向)", "direction": "南向北", "speedLimit": 60, "lat": 24.99512, "lng": 121.21815, "feature": "測速照相", "note": "青埔高鐵特區筆直林蔭大道"}, {"id": "TYCG-F005", "code": "桃園固-005", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "桃園市", "district": "龜山區", "location": "萬壽路一段689號前(近龍華科大)", "direction": "雙向", "speedLimit": 50, "lat": 25.01815, "lng": 121.40815, "feature": "測速照相", "note": "迴龍下坡路段，台1甲省道常設固定桿"}, {"id": "TYCG-F006", "code": "桃園固-006", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "桃園市", "district": "龜山區", "location": "文化一路與復興一路口(林口長庚前)", "direction": "北向南", "speedLimit": 50, "lat": 25.06112, "lng": 121.36815, "feature": "測速照相", "note": "林口長庚商圈人車密集科技執法"}, {"id": "TYCG-F007", "code": "桃園固-007", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "桃園市", "district": "八德區", "location": "介壽路二段與和平路口", "direction": "北向南", "speedLimit": 50, "lat": 24.94512, "lng": 121.29815, "feature": "測速照相", "note": "大溪八德聯絡幹道台4線"}, {"id": "TYCG-F008", "code": "桃園固-008", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "桃園市", "district": "蘆竹區", "location": "南崁路二段與南山路口", "direction": "東向西", "speedLimit": 50, "lat": 25.06125, "lng": 121.28125, "feature": "測速照相", "note": "台4線近南崁好市多及台茂"}, {"id": "TYCG-F009", "code": "桃園固-009", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "桃園市", "district": "大園區", "location": "中正東路一段與三民路二段口", "direction": "西向東", "speedLimit": 60, "lat": 25.07815, "lng": 121.22815, "feature": "測速照相", "note": "桃園機場聯外道路"}, {"id": "TYCG-F010", "code": "桃園固-010", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "桃園市", "district": "平鎮區", "location": "延平路一段與康樂路口", "direction": "北向南", "speedLimit": 50, "lat": 24.95125, "lng": 121.21815, "feature": "測速照相", "note": "中壢平鎮省道縱貫幹道"}, {"id": "TYCG-I001", "code": "桃園區-001", "category": "interval", "typeLabel": "區間測速", "func": "區間測速", "city": "桃園市", "district": "龜山區", "location": "萬壽路一段(雙向長陡坡)", "direction": "雙向", "speedLimit": 50, "lat": 25.01125, "lng": 121.39815, "feature": "區間測速", "note": "降坡易超速重大事故防制熱點"}, {"id": "TYCG-M001", "code": "桃園移-001", "category": "mobile", "typeLabel": "移動式黑箱", "func": "移動式測速", "city": "桃園市", "district": "大園區", "location": "台15線西濱公路 32K 處", "direction": "南向北", "speedLimit": 70, "lat": 25.09815, "lng": 121.18125, "feature": "移動式雷達", "note": "西濱筆直快速路段交大常設點"}, {"id": "KLCP-F001", "code": "基隆固-001", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "基隆市", "district": "仁愛區", "location": "仁一路與愛六路口", "direction": "西向東", "speedLimit": 50, "lat": 25.12815, "lng": 121.74512, "feature": "測速照相", "note": "基隆市區田寮河畔主幹道"}, {"id": "KLCP-F002", "code": "基隆固-002", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "基隆市", "district": "中正區", "location": "中正路與正榮街口(往八斗子方向)", "direction": "南向北", "speedLimit": 50, "lat": 25.13815, "lng": 121.76125, "feature": "測速照相", "note": "基隆港東岸往海洋大學主要省道"}, {"id": "KLCP-F003", "code": "基隆固-003", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "基隆市", "district": "信義區", "location": "東信路與正信路口", "direction": "東向西", "speedLimit": 50, "lat": 25.12512, "lng": 121.76215, "feature": "測速照相", "note": "基隆法院與培德高職前主幹道"}, {"id": "KLCP-F004", "code": "基隆固-004", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "基隆市", "district": "七堵區", "location": "明德二路2之1號前(往汐止方向)", "direction": "北向南", "speedLimit": 50, "lat": 25.09125, "lng": 121.70125, "feature": "測速照相", "note": "台5線省道基隆往台北重要聯絡道"}, {"id": "KLCP-F005", "code": "基隆固-005", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "基隆市", "district": "七堵區", "location": "工建西路與工建路口(六堵工業區)", "direction": "北向南", "speedLimit": 50, "lat": 25.08125, "lng": 121.68815, "feature": "測速照相", "note": "工業區聯外幹道筆直超速熱點"}, {"id": "KLCP-F006", "code": "基隆固-006", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "基隆市", "district": "暖暖區", "location": "東勢街與東安一號橋口", "direction": "南向北", "speedLimit": 40, "lat": 25.09815, "lng": 121.74125, "feature": "測速照相", "note": "暖暖山區道路速限40km/h"}, {"id": "KLCP-F007", "code": "基隆固-007", "category": "fixed", "typeLabel": "固定式測速", "func": "測速", "city": "基隆市", "district": "中山區", "location": "文化路116號前(中山高中附近)", "direction": "南向北", "speedLimit": 50, "lat": 25.14125, "lng": 121.73125, "feature": "測速照相", "note": "西岸碼頭後方主要幹道"}, {"id": "KLCP-I001", "code": "基隆區-001", "category": "interval", "typeLabel": "區間測速", "func": "區間測速", "city": "基隆市", "district": "台62線", "location": "台62線萬瑞快速公路 1.7K 至 0.7K (瑪陵隧道)", "direction": "東向西", "speedLimit": 70, "lat": 25.11125, "lng": 121.69125, "feature": "區間測速", "note": "快速公路隧道全段區間速率科技執法"}, {"id": "KLCP-I002", "code": "基隆區-002", "category": "interval", "typeLabel": "區間測速", "func": "區間測速", "city": "基隆市", "district": "台62甲", "location": "台62甲線 3號隧道出口至東海街出口", "direction": "南向北", "speedLimit": 60, "lat": 25.13125, "lng": 121.75815, "feature": "區間測速", "note": "基隆港東岸聯外高架隧道區間測速"}, {"id": "KLCP-M001", "code": "基隆移-001", "category": "mobile", "typeLabel": "移動式黑箱", "func": "移動式測速", "city": "基隆市", "district": "七堵區", "location": "台5線北五堵段(近新北汐止交界)", "direction": "雙向", "speedLimit": 50, "lat": 25.08512, "lng": 121.67815, "feature": "移動式雷達", "note": "新北基隆通勤主要路廊常態巡查"}];
+  </script>
+
+  <!-- Application Main Logic -->
+  <script>
+    // State Management
+    let cameras = [...INITIAL_CAMERAS];
+    let favorites = new Set();
+    let showFavsOnly = false;
+    let voiceEnabled = true;
+    let currentTab = 'map';
+    let vehiclePos = { lat: 25.0478, lng: 121.5318 };
+    let prevVehiclePos = { lat: 25.0470, lng: 121.5318 };
+    let currentHeadingDeg = 0;
+    let currentSpeed = 0;
+    let gpsWatchId = null;
+    let wakeLockSentinel = null;
+    let isMirrorHud = false;
+    let lastSpokenCameraId = null;
+    let isDoubleVolume = true;   // 預設開啟雙倍震撼音量 (2x Gain)
+    let isDoubleDistance = true; // 預設開啟雙倍提前預警 (760m/1600m)
+    let hasAlertedStage1 = new Set();
+
+    // Load saved custom cameras and favorites safely
+    try {
+      const savedFavs = localStorage.getItem('tp_speed_favs');
+      if (savedFavs) favorites = new Set(JSON.parse(savedFavs));
+      const savedCustom = localStorage.getItem('tp_speed_custom');
+      if (savedCustom) {
+        const parsed = JSON.parse(savedCustom);
+        if (Array.isArray(parsed)) cameras = [...INITIAL_CAMERAS, ...parsed];
+      }
+    } catch (e) {}
+
+    function saveState() {
+      try {
+        localStorage.setItem('tp_speed_favs', JSON.stringify([...favorites]));
+        const customOnly = cameras.filter(c => c.id.startsWith('U'));
+        localStorage.setItem('tp_speed_custom', JSON.stringify(customOnly));
+      } catch (e) {}
+    }
+
+    // Audio & Voice Engine
+    let audioCtx = null;
+
+    function playRadarBeep(isOverspeed = false) {
+      if (!voiceEnabled) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = isOverspeed ? 'sawtooth' : 'sine';
+        osc.frequency.setValueAtTime(isOverspeed ? 1040 : 680, audioCtx.currentTime);
+        if (isOverspeed) {
+          osc.frequency.setValueAtTime(1380, audioCtx.currentTime + 0.1);
+        }
+        // 雙倍音量增益計算：標準 0.16，雙倍模式強化至 0.36
+        const baseGain = isDoubleVolume ? 0.36 : 0.16;
+        gain.gain.setValueAtTime(baseGain, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (isOverspeed ? 0.36 : 0.22));
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + (isOverspeed ? 0.38 : 0.24));
+      } catch (e) {}
+    }
+
+    function speakWarning(text, isOverspeed = false) {
+      playRadarBeep(isOverspeed);
+      if (!voiceEnabled) return;
+      try {
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.lang = 'zh-TW';
+          utter.rate = isDoubleVolume ? 1.05 : 1.1;
+          utter.volume = 1.0;
+          utter.pitch = isOverspeed ? 1.25 : 1.05;
+          window.speechSynthesis.speak(utter);
+        }
+      } catch (e) {}
+    }
+
+    // Distance & Math
+    function getDistanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = d => d * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return Math.round(R * c);
+    }
+
+    function calculateHeading(lat1, lon1, lat2, lon2) {
+      const toRad = d => d * Math.PI / 180;
+      const toDeg = r => r * 180 / Math.PI;
+      const dLon = toRad(lon2 - lon1);
+      const y = Math.sin(dLon) * Math.cos(toRad(lat2));
+      const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+                Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+      let brng = toDeg(Math.atan2(y, x));
+      return Math.round((brng + 360) % 360);
+    }
+
+    function getCompassLabel(deg) {
+      const dirs = ['北', '東北', '東', '東南', '南', '西南', '西', '西北'];
+      const idx = Math.round(deg / 45) % 8;
+      return `${dirs[idx]} ${deg}°`;
+    }
+
+    function showToast(text, icon = '💡') {
+      const toast = document.getElementById('toastMsg');
+      document.getElementById('toastIcon').textContent = icon;
+      document.getElementById('toastText').textContent = text;
+      toast.classList.remove('opacity-0', 'translate-y-10');
+      toast.classList.add('opacity-100', 'translate-y-0');
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'translate-y-10');
+      }, 3200);
+    }
+
+    // Map & Markers
+    let map = null;
+    let markersLayer = null;
+    let vehicleMarker = null;
+    let radarCircle = null;
+
+    function createCameraIcon(cat, speedLimit) {
+      const colorMap = {
+        fixed: '#ef4444',
+        mobile: '#f59e0b',
+        interval: '#a855f7',
+        tech: '#06b6d4'
+      };
+      const color = colorMap[cat] || colorMap.fixed;
+      return L.divIcon({
+        className: 'custom-cam-marker',
+        html: `
+          <div style="position:relative; width:30px; height:30px; display:flex; align-items:center; justify-content:center;">
+            <div style="position:absolute; inset:0; border-radius:50%; background:${color}25; border:1px solid ${color};"></div>
+            <div style="width:20px; height:20px; border-radius:50%; background:${color}; color:#fff; font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center; box-shadow:0 0 8px ${color};">
+              ${speedLimit}
+            </div>
+          </div>
+        `,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+      });
+    }
+
+    function initMap() {
+      map = L.map('radarMap', {
+        zoomControl: true,
+        attributionControl: false
+      }).setView([vehiclePos.lat, vehiclePos.lng], 14);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19
+      }).addTo(map);
+
+      markersLayer = L.layerGroup().addTo(map);
+
+      // Vehicle location marker
+      const carIcon = L.divIcon({
+        className: 'car-icon',
+        html: `
+          <div style="position:relative; width:34px; height:34px; display:flex; align-items:center; justify-content:center;">
+            <div class="radar-pulse" style="position:absolute; inset:4px; border-radius:50%; background:#3b82f633; color:#3b82f6;"></div>
+            <div style="width:18px; height:18px; border-radius:50%; background:#3b82f6; border:3px solid #ffffff; box-shadow:0 0 12px #3b82f6; z-index:2;"></div>
+          </div>
+        `,
+        iconSize: [34, 34],
+        iconAnchor: [17, 17]
+      });
+
+      vehicleMarker = L.marker([vehiclePos.lat, vehiclePos.lng], { icon: carIcon, zIndexOffset: 1000 }).addTo(map);
+
+      radarCircle = L.circle([vehiclePos.lat, vehiclePos.lng], {
+        radius: isDoubleDistance ? 1600 : 800,
+        color: '#3b82f6',
+        weight: 1.5,
+        fillColor: '#3b82f6',
+        fillOpacity: 0.08
+      }).addTo(map);
+
+      renderMapMarkers();
+    }
+
+    function renderMapMarkers() {
+      if (!markersLayer) return;
+      markersLayer.clearLayers();
+
+      const cityFilter = document.getElementById('mapCityFilter').value;
+      const catFilter = document.getElementById('mapCategoryFilter').value;
+      const q = document.getElementById('mapSearchInput').value.trim().toLowerCase();
+
+      const filtered = cameras.filter(c => {
+        const matchCity = cityFilter === 'ALL' || c.city === cityFilter;
+        const matchCat = catFilter === 'ALL' || c.category === catFilter;
+        const matchQ = !q || c.location.toLowerCase().includes(q) || c.district.toLowerCase().includes(q) || c.code.toLowerCase().includes(q);
+        return matchCity && matchCat && matchQ;
+      });
+
+      filtered.forEach(c => {
+        const marker = L.marker([c.lat, c.lng], { icon: createCameraIcon(c.category, c.speedLimit) });
+        const popupHtml = `
+          <div class="p-1 min-w-[210px]">
+            <div class="flex items-center justify-between gap-1 mb-1">
+              <span class="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-800 text-amber-300">${c.code}</span>
+              <span class="text-xs font-bold text-red-400">速限 ${c.speedLimit} km/h</span>
+            </div>
+            <div class="font-bold text-sm text-white">${c.location}</div>
+            <div class="text-xs text-slate-300 mt-1">${c.city} ${c.district} · 方向：${c.direction}</div>
+            <div class="text-xs text-slate-400 mt-1">${c.feature}（${c.note}）</div>
+          </div>
+        `;
+        marker.bindPopup(popupHtml);
+        marker.addTo(markersLayer);
+      });
+    }
+
+    // Real-Time GPS Tracking & HUD Updates
+    function updateVehicleHud(allowVoiceTrigger = true) {
+      const compassTxt = getCompassLabel(currentHeadingDeg);
+      document.getElementById('hudHeadingBadge').textContent = `方位：${compassTxt}`;
+
+      const withDist = cameras.map(c => ({
+        ...c,
+        dist: getDistanceMeters(vehiclePos.lat, vehiclePos.lng, c.lat, c.lng)
+      })).sort((a, b) => a.dist - b.dist);
+
+      const nearest = withDist[0];
+      if (!nearest) return;
+
+      const speedEl = document.getElementById('hudCurrentSpeed');
+      const tolEl = document.getElementById('hudToleranceTag');
+      const cardEl = document.getElementById('hudAlertCard');
+      const warnTextEl = document.getElementById('hudWarningLevelText');
+      const barEl = document.getElementById('hudProximityBar');
+      const badgeEl = document.getElementById('hudNearestBadge');
+
+      const badgeStyles = {
+        fixed: 'bg-red-500/20 text-red-300 border-red-500/40',
+        mobile: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+        interval: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+        tech: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+      };
+      badgeEl.className = `inline-block text-[10px] font-bold px-2 py-0.5 rounded border ${badgeStyles[nearest.category] || badgeStyles.fixed} mt-1`;
+      badgeEl.textContent = nearest.typeLabel;
+
+      document.getElementById('hudSpeedSign').textContent = nearest.speedLimit;
+      document.getElementById('hudNearestDistance').textContent = nearest.dist;
+      document.getElementById('hudCameraCode').textContent = nearest.code;
+      document.getElementById('hudCameraLocation').textContent = `${nearest.city} ${nearest.location}`;
+      document.getElementById('hudCameraDetails').textContent = `方向：${nearest.direction} ｜ 轄區：${nearest.district} ｜ 項目：${nearest.feature}（${nearest.note}）`;
+
+      // 雙倍預警距離與進度條計算
+      const triggerDist = isDoubleDistance ? 760 : 380;
+      const radarLimit = isDoubleDistance ? 1600 : 800;
+      const pct = Math.max(8, Math.min(100, Math.round((1 - Math.min(nearest.dist, radarLimit) / radarLimit) * 100)));
+      barEl.style.width = `${pct}%`;
+
+      const isOverLimit = currentSpeed > nearest.speedLimit;
+      const isTicketable = currentSpeed > (nearest.speedLimit + 10);
+      const inAlertZone = nearest.dist <= (isDoubleDistance ? 760 : 500);
+
+      if (isTicketable && inAlertZone) {
+        speedEl.className = 'text-5xl sm:text-6xl font-black mono text-red-500 tracking-tight';
+        tolEl.textContent = '(超速危險!)';
+        tolEl.className = 'text-red-400 font-bold';
+        cardEl.classList.add('alert-flash');
+        warnTextEl.textContent = `🚨 嚴重警告：距離 ${nearest.dist}m 且超過寬限值，請立即減速至 ${nearest.speedLimit} km/h！`;
+        warnTextEl.className = 'font-bold text-red-400';
+      } else if (isOverLimit) {
+        speedEl.className = 'text-5xl sm:text-6xl font-black mono text-amber-400 tracking-tight';
+        tolEl.textContent = `(寬限值 < ${nearest.speedLimit + 10} km/h)`;
+        tolEl.className = 'text-amber-400 font-bold';
+        cardEl.classList.remove('alert-flash');
+        warnTextEl.textContent = `⚠️ 超速提醒：距離 ${nearest.dist}m，目前速度超過速限 ${nearest.speedLimit} km/h`;
+        warnTextEl.className = 'font-bold text-amber-300';
+      } else {
+        speedEl.className = 'text-5xl sm:text-6xl font-black mono text-white tracking-tight';
+        tolEl.textContent = `(安全 < ${nearest.speedLimit + 10} km/h)`;
+        tolEl.className = 'text-emerald-400 font-bold';
+        cardEl.classList.remove('alert-flash');
+        warnTextEl.textContent = inAlertZone ? `進入預警半徑：前方 ${nearest.dist}m 處有執法點` : '車速正常 · 雷達持續監控中';
+        warnTextEl.className = 'font-bold text-emerald-400';
+      }
+
+      // 二段式雙重預警邏輯 (Double Stage Alert)
+      if (allowVoiceTrigger) {
+        // 第一階段：雙倍遠距提前預告 (760m - 400m)
+        if (isDoubleDistance && nearest.dist <= 760 && nearest.dist > 380 && !hasAlertedStage1.has(nearest.id)) {
+          hasAlertedStage1.add(nearest.id);
+          const msg = `[雙倍提前預警] 前方 ${nearest.dist} 公尺，${nearest.location}，速限 ${nearest.speedLimit} 公里。`;
+          speakWarning(msg, false);
+          showToast(`🎯 雙倍遠距預警：前方 ${nearest.dist}m ${nearest.location}（限速 ${nearest.speedLimit}）`, '⚡');
+        }
+        // 第二階段：近距離即時防制與超速蜂鳴 (<= 380m)
+        if (nearest.dist <= 380 && lastSpokenCameraId !== nearest.id) {
+          lastSpokenCameraId = nearest.id;
+          const msg = `注意！前方 ${nearest.dist} 公尺，${nearest.location}，有${nearest.typeLabel}，速限 ${nearest.speedLimit} 公里，${isOverLimit ? '請立即減速！' : '請維持速限'}`;
+          speakWarning(msg, isOverLimit);
+        }
+      }
+
+      // Render top 4 nearby cameras list
+      const nearbyContainer = document.getElementById('nearbyListContainer');
+      nearbyContainer.innerHTML = withDist.slice(0, 4).map(c => {
+        const dotColor = {
+          fixed: 'bg-red-500',
+          mobile: 'bg-amber-400',
+          interval: 'bg-purple-500',
+          tech: 'bg-cyan-400'
+        };
+        return `
+          <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between text-xs">
+            <div class="flex items-center gap-2 truncate pr-2">
+              <span class="w-2.5 h-2.5 rounded-full ${dotColor[c.category] || 'bg-red-500'} shrink-0"></span>
+              <div class="truncate">
+                <div class="font-bold text-white truncate">${c.city} ${c.location}</div>
+                <div class="text-[10px] text-slate-400 truncate">${c.district} · ${c.direction}</div>
+              </div>
+            </div>
+            <div class="text-right shrink-0">
+              <div class="font-black mono text-amber-400">${c.dist}m</div>
+              <div class="text-[10px] text-slate-400">限 ${c.speedLimit}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Update map vehicle marker & radar circle
+      if (vehicleMarker && radarCircle) {
+        vehicleMarker.setLatLng([vehiclePos.lat, vehiclePos.lng]);
+        radarCircle.setLatLng([vehiclePos.lat, vehiclePos.lng]);
+      }
+    }
+
+    // Real GPS Position Handler
+    function startRealGpsTracking() {
+      if (!navigator.geolocation) {
+        showToast('此裝置不支援 GPS 定位，已維持預設位置', '⚠️');
+        return;
+      }
+
+      const gpsBtn = document.getElementById('btnRealGps');
+      const gpsText = document.getElementById('gpsBtnText');
+      gpsBtn.className = 'w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-emerald-600 text-white shadow-lg transition';
+      gpsText.textContent = 'GPS 定位中...';
+
+      if (gpsWatchId) navigator.geolocation.clearWatch(gpsWatchId);
+
+      gpsWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const newLat = Number(pos.coords.latitude.toFixed(6));
+          const newLng = Number(pos.coords.longitude.toFixed(6));
+          
+          prevVehiclePos = { ...vehiclePos };
+          vehiclePos = { lat: newLat, lng: newLng };
+
+          if (pos.coords.heading !== null && !isNaN(pos.coords.heading)) {
+            currentHeadingDeg = Math.round(pos.coords.heading);
+          } else {
+            currentHeadingDeg = calculateHeading(prevVehiclePos.lat, prevVehiclePos.lng, vehiclePos.lat, vehiclePos.lng);
+          }
+
+          if (pos.coords.speed !== null && !isNaN(pos.coords.speed) && pos.coords.speed >= 0) {
+            currentSpeed = Math.round(pos.coords.speed * 3.6);
+          }
+
+          document.getElementById('hudCurrentSpeed').textContent = currentSpeed;
+          gpsText.textContent = 'GPS 訊號良好 (純網頁運行中)';
+          document.getElementById('gpsStatusSubtext').textContent = `衛星鎖定經緯度：${newLat}°N, ${newLng}°E ｜ 即時車速：${currentSpeed} km/h`;
+
+          updateVehicleHud(true);
+          if (map) map.panTo([vehiclePos.lat, vehiclePos.lng]);
+        },
+        (err) => {
+          gpsBtn.className = 'w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-amber-600 text-white shadow-lg transition';
+          gpsText.textContent = 'GPS 訊號重試';
+          showToast('請允許瀏覽器定位權限以進行上路預警', '⚠️');
+        },
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
+      );
+    }
+
+    // Database Table Functions
+    function getFilteredListCameras() {
+      const q = document.getElementById('listSearchInput').value.trim().toLowerCase();
+      const city = document.getElementById('listCityFilter').value;
+      const cat = document.getElementById('listCategoryFilter').value;
+      const spd = document.getElementById('listSpeedFilter').value;
+
+      return cameras.filter(c => {
+        if (showFavsOnly && !favorites.has(c.id)) return false;
+        if (city !== 'ALL' && c.city !== city) return false;
+        if (cat !== 'ALL' && c.category !== cat) return false;
+        if (spd !== 'ALL') {
+          const lim = Number(spd);
+          if (spd === '40' && c.speedLimit > 40) return false;
+          if (spd !== '40' && c.speedLimit !== lim) return false;
+        }
+        if (q) {
+          const matched = c.code.toLowerCase().includes(q) ||
+                          c.location.toLowerCase().includes(q) ||
+                          c.district.toLowerCase().includes(q) ||
+                          c.city.toLowerCase().includes(q) ||
+                          c.direction.toLowerCase().includes(q) ||
+                          c.note.toLowerCase().includes(q);
+          if (!matched) return false;
+        }
+        return true;
+      });
+    }
+
+    function renderCameraTable() {
+      const list = getFilteredListCameras();
+      document.getElementById('filterMatchCount').textContent = list.length;
+      document.getElementById('navTotalCount').textContent = cameras.length;
+      const tbody = document.getElementById('cameraTableBody');
+
+      const badgeMap = {
+        fixed: 'bg-red-500/20 text-red-300 border-red-500/30',
+        mobile: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+        interval: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+        tech: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
+      };
+
+      tbody.innerHTML = list.map(c => {
+        const isFav = favorites.has(c.id);
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-2.5 px-3 font-mono font-bold text-xs text-blue-400 whitespace-nowrap">${c.code}</td>
+            <td class="py-2.5 px-2 text-xs font-semibold text-slate-300 whitespace-nowrap">${c.city}</td>
+            <td class="py-2.5 px-2 whitespace-nowrap">
+              <span class="text-[11px] font-bold px-1.5 py-0.5 rounded border ${badgeMap[c.category] || badgeMap.fixed}">
+                ${c.typeLabel}
+              </span>
+            </td>
+            <td class="py-2.5 px-3">
+              <div class="font-bold text-white text-xs sm:text-sm">${c.location}</div>
+              <div class="text-[11px] text-slate-400">${c.district} · ${c.direction}</div>
+            </td>
+            <td class="py-2.5 px-2 text-xs text-slate-300 whitespace-nowrap">${c.direction}</td>
+            <td class="py-2.5 px-2 text-center whitespace-nowrap">
+              <span class="speed-sign-sm">${c.speedLimit}</span>
+            </td>
+            <td class="py-2.5 px-3 text-xs text-slate-300 max-w-xs sm:max-w-md">
+              <div class="font-medium text-amber-300/90">${c.feature}</div>
+              <div class="text-slate-400 text-[11px] truncate">${c.note}</div>
+            </td>
+            <td class="py-2.5 px-3 text-center whitespace-nowrap">
+              <button onclick="toggleFavorite('${c.id}')" class="px-2 py-1 rounded text-xs font-semibold ${isFav ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-800 text-slate-400 hover:text-white'}">
+                ${isFav ? '★ 已關注' : '☆ 關注'}
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    window.toggleFavorite = function(id) {
+      if (favorites.has(id)) {
+        favorites.delete(id);
+        showToast('已取消關注點位', '☆');
+      } else {
+        favorites.add(id);
+        showToast('已加入關注執法點', '★');
+      }
+      saveState();
+      renderCameraTable();
+    };
+
+    // Fines Calculator
+    function calculateFine() {
+      const vType = document.getElementById('calcVehicleType').value;
+      const limit = Number(document.getElementById('calcSpeedLimit').value);
+      const actual = Number(document.getElementById('calcActualSpeed').value) || 0;
+      const over = actual - limit;
+      const box = document.getElementById('calcResultBox');
+
+      if (over <= 0) {
+        box.className = 'mt-4 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 text-xs sm:text-sm space-y-1.5';
+        box.innerHTML = `
+          <div class="font-bold text-emerald-400 text-sm">✅ 車速完全合規</div>
+          <div>目前行車時速 ${actual} km/h，未超過道路速限 ${limit} km/h，無違規超速處罰。</div>
+        `;
+        return;
+      }
+
+      if (over <= 10) {
+        box.className = 'mt-4 p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-blue-200 text-xs sm:text-sm space-y-1.5';
+        box.innerHTML = `
+          <div class="font-bold text-blue-400 text-sm">ℹ️ 處於 10 km/h 容許誤差寬限值內</div>
+          <div>超速 ${over} km/h。依《違反道路交通管理事件統一裁罰基準及處理細則》第 12 條規定，超速 10 公里以下且未嚴重妨礙交通者，得以勸導免予舉發。</div>
+        `;
+        return;
+      }
+
+      let fine = '';
+      let isSevere = false;
+      let severeNote = '';
+
+      if (over > 40) {
+        isSevere = true;
+        fine = vType === 'scooter' ? '12,000 ~ 18,000' : (vType === 'car' ? '18,000 ~ 24,000' : '24,000 ~ 36,000');
+        severeNote = '🚨 觸犯《道交條例》第 43 條「嚴重超速新制」！吊扣汽車牌照 6 個月，並接受道路交通安全講習！';
+      } else if (over > 20) {
+        fine = vType === 'scooter' ? '1,400 ~ 1,800' : (vType === 'car' ? '1,800 ~ 2,200' : '2,200 ~ 2,600');
+      } else {
+        fine = vType === 'scooter' ? '1,200 ~ 1,600' : (vType === 'car' ? '1,600 ~ 2,000' : '2,000 ~ 2,400');
+      }
+
+      box.className = isSevere ? 'mt-4 p-4 rounded-2xl bg-red-500/15 border border-red-500/40 text-red-200 text-xs sm:text-sm space-y-1.5' : 'mt-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs sm:text-sm space-y-1.5';
+      box.innerHTML = `
+        <div class="font-bold ${isSevere ? 'text-red-400' : 'text-amber-400'} text-sm">
+          ${isSevere ? '⛔ 嚴重超速危險駕駛警告' : '⚠️ 超速違規舉發警告'}（超速 ${over} km/h）
+        </div>
+        <div>預估罰鍰：<strong>新臺幣 ${fine} 元</strong></div>
+        ${severeNote ? `<div class="font-bold text-red-300 mt-1">${severeNote}</div>` : ''}
+        <div class="text-[11px] text-slate-400">提醒：法規已自超速 60 公里下修為超速 40 公里即屬嚴重危險駕駛，請務必注意行車安全！</div>
+      `;
+    }
+
+    // Charts Engine
+    let chartDistInstance = null;
+    let chartSpeedInstance = null;
+
+    function initCharts() {
+      const cities = ['臺北市', '新北市', '桃園市', '基隆市'];
+      const cityCounts = cities.map(c => cameras.filter(x => x.city === c).length);
+
+      const ctx1 = document.getElementById('chartDistricts').getContext('2d');
+      if (chartDistInstance) chartDistInstance.destroy();
+      chartDistInstance = new Chart(ctx1, {
+        type: 'bar',
+        data: {
+          labels: cities,
+          datasets: [{
+            label: '執法點位數量',
+            data: cityCounts,
+            backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { grid: { color: '#1e293b' }, ticks: { color: '#94a3b8' } },
+            x: { grid: { display: false }, ticks: { color: '#cbd5e1' } }
+          }
+        }
+      });
+
+      const speedLabels = ['≤ 40 km/h (山區/慢車道)', '50 km/h (市區主幹道)', '60 km/h (快速道路)', '70 km/h (高架快速路段)', '80 km/h (高架主線)'];
+      const speedData = [
+        cameras.filter(c => c.speedLimit <= 40).length,
+        cameras.filter(c => c.speedLimit === 50).length,
+        cameras.filter(c => c.speedLimit === 60).length,
+        cameras.filter(c => c.speedLimit === 70).length,
+        cameras.filter(c => c.speedLimit >= 80).length
+      ];
+
+      const ctx2 = document.getElementById('chartSpeedLimits').getContext('2d');
+      if (chartSpeedInstance) chartSpeedInstance.destroy();
+      chartSpeedInstance = new Chart(ctx2, {
+        type: 'doughnut',
+        data: {
+          labels: speedLabels,
+          datasets: [{
+            data: speedData,
+            backgroundColor: ['#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#a855f7']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom', labels: { color: '#cbd5e1', boxWidth: 12, font: { size: 10 } } }
+          }
+        }
+      });
+    }
+
+    // Tab Navigation
+    function switchTab(targetTab) {
+      currentTab = targetTab;
+      const views = {
+        map: document.getElementById('viewMap'),
+        list: document.getElementById('viewList'),
+        stats: document.getElementById('viewStats')
+      };
+      const btns = {
+        map: document.getElementById('tabBtnMap'),
+        list: document.getElementById('tabBtnList'),
+        stats: document.getElementById('tabBtnStats')
+      };
+
+      Object.keys(views).forEach(k => {
+        if (k === targetTab) {
+          views[k].classList.remove('hidden');
+          btns[k].className = 'tab-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition bg-blue-600 text-white shadow';
+        } else {
+          views[k].classList.add('hidden');
+          btns[k].className = 'tab-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition text-slate-300 hover:text-white';
+        }
+      });
+
+      if (targetTab === 'map' && map) {
+        setTimeout(() => map.invalidateSize(), 150);
+      }
+      if (targetTab === 'list') {
+        renderCameraTable();
+      }
+      if (targetTab === 'stats') {
+        setTimeout(() => {
+          initCharts();
+          calculateFine();
+        }, 100);
+      }
+    }
+
+    // Initialization
+    window.addEventListener('DOMContentLoaded', () => {
+      initMap();
+      updateVehicleHud(false);
+      startRealGpsTracking();
+
+      // Navigation listeners
+      document.getElementById('tabBtnMap').addEventListener('click', () => switchTab('map'));
+      document.getElementById('tabBtnList').addEventListener('click', () => switchTab('list'));
+      document.getElementById('tabBtnStats').addEventListener('click', () => switchTab('stats'));
+
+      // Real GPS Re-locate Button
+      document.getElementById('btnRealGps').addEventListener('click', () => {
+        startRealGpsTracking();
+        showToast('正在向裝置索取高精度衛星定位...', '📍');
+      });
+
+      // Voice Alert Test
+      document.getElementById('btnTestVoiceAlert').addEventListener('click', () => {
+        const wasMuted = !voiceEnabled;
+        if (wasMuted) voiceEnabled = true;
+        speakWarning('北北基桃雷達語音測試：前方兩百公尺有固定式測速照相，速限五十公里，請減速慢行。', true);
+        showToast('正在播報語音與雙倍雷達警示音', '🔔');
+        if (wasMuted) voiceEnabled = false;
+      });
+
+      // Voice Mute Toggle
+      document.getElementById('btnToggleVoice').addEventListener('click', () => {
+        voiceEnabled = !voiceEnabled;
+        const icon = document.getElementById('voiceIcon');
+        const label = document.getElementById('voiceLabel');
+        const btn = document.getElementById('btnToggleVoice');
+        if (voiceEnabled) {
+          icon.textContent = '🔊';
+          label.textContent = '語音預警：開啟';
+          btn.className = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition';
+          playRadarBeep(false);
+          showToast('已開啟測速語音與蜂鳴警報', '🔊');
+        } else {
+          icon.textContent = '🔇';
+          label.textContent = '語音預警：靜音';
+          btn.className = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700 transition';
+          if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+          showToast('已切換為靜音模式', '🔇');
+        }
+      });
+
+      // Toggle Double Volume (2x Gain)
+      document.getElementById('btnToggleDoubleVolume').addEventListener('click', () => {
+        isDoubleVolume = !isDoubleVolume;
+        const btn = document.getElementById('btnToggleDoubleVolume');
+        const label = document.getElementById('doubleVolumeLabel');
+        const icon = document.getElementById('doubleVolumeIcon');
+        if (isDoubleVolume) {
+          btn.className = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-500/25 text-amber-300 border border-amber-500/40 transition shadow';
+          label.textContent = '音量：雙倍震撼 (2x)';
+          icon.textContent = '⚡';
+          playRadarBeep(true);
+          showToast('已開啟「雙倍震撼音量 (2x Gain)」！音量強化 100%，適合高速風切與車內音樂', '⚡');
+        } else {
+          btn.className = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700 transition';
+          label.textContent = '音量：標準 (1x)';
+          icon.textContent = '🔈';
+          playRadarBeep(false);
+          showToast('已切換為「標準音量 (1x)」', '🔈');
+        }
+      });
+
+      // Toggle Double Warning Distance (760m / 1600m)
+      document.getElementById('btnToggleDoubleDistance').addEventListener('click', () => {
+        isDoubleDistance = !isDoubleDistance;
+        const btn = document.getElementById('btnToggleDoubleDistance');
+        const label = document.getElementById('doubleDistanceLabel');
+        const icon = document.getElementById('doubleDistanceIcon');
+        if (isDoubleDistance) {
+          btn.className = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-500/25 text-rose-300 border border-rose-500/40 transition shadow';
+          label.textContent = '預警：雙倍遠距 (760m)';
+          icon.textContent = '🎯';
+          if (radarCircle) radarCircle.setRadius(1600);
+          showToast('已開啟「雙倍遠距預警」！市區提早至 760m、快速道路提早至 1600m 預警', '🎯');
+        } else {
+          btn.className = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700 transition';
+          label.textContent = '預警：標準距離 (380m)';
+          icon.textContent = '📍';
+          if (radarCircle) radarCircle.setRadius(800);
+          showToast('已切換為「標準預警距離 (380m)」', '📍');
+        }
+        updateVehicleHud(false);
+      });
+
+      // Wake Lock (Prevent Screen Sleep)
+      document.getElementById('btnToggleWakeLock').addEventListener('click', async () => {
+        const btn = document.getElementById('btnToggleWakeLock');
+        const label = document.getElementById('wakeLockLabel');
+        if (wakeLockSentinel) {
+          try { await wakeLockSentinel.release(); } catch (e) {}
+          wakeLockSentinel = null;
+          label.textContent = '螢幕恆亮：關閉';
+          btn.className = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition';
+          showToast('已關閉螢幕恆亮模式', '💡');
+          return;
+        }
+        try {
+          if ('wakeLock' in navigator) {
+            wakeLockSentinel = await navigator.wakeLock.request('screen');
+            label.textContent = '螢幕恆亮：開啟';
+            btn.className = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-500/25 text-amber-300 border border-amber-500/40 transition';
+            showToast('已開啟螢幕恆亮（行車中不暗屏）', '🔆');
+          } else {
+            label.textContent = '螢幕恆亮：啟用中';
+            btn.className = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-500/25 text-amber-300 border border-amber-500/40 transition';
+            showToast('已啟用防休眠模式', '🔆');
+          }
+        } catch (err) {
+          label.textContent = '螢幕恆亮：已啟用';
+          btn.className = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-500/25 text-amber-300 border border-amber-500/40 transition';
+          showToast('已啟用防休眠標記', '🔆');
+        }
+      });
+
+      // Windshield HUD Mirror Reflection
+      document.getElementById('btnToggleMirrorHud').addEventListener('click', () => {
+        isMirrorHud = !isMirrorHud;
+        const hudCard = document.getElementById('hudAlertCard');
+        const btn = document.getElementById('btnToggleMirrorHud');
+        if (isMirrorHud) {
+          hudCard.classList.add('hud-mirror-active');
+          btn.className = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-cyan-500 text-slate-950 transition shadow';
+          showToast('已開啟前擋投影反射模式（鏡像翻轉）', '🪞');
+        } else {
+          hudCard.classList.remove('hud-mirror-active');
+          btn.className = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/25 transition';
+          showToast('已恢復正常顯示方向', '📱');
+        }
+      });
+
+      // Map filter listeners
+      document.getElementById('mapCityFilter').addEventListener('change', renderMapMarkers);
+      document.getElementById('mapCategoryFilter').addEventListener('change', renderMapMarkers);
+      document.getElementById('mapSearchInput').addEventListener('input', renderMapMarkers);
+
+      // Database list filter listeners
+      document.getElementById('listSearchInput').addEventListener('input', renderCameraTable);
+      document.getElementById('listCityFilter').addEventListener('change', renderCameraTable);
+      document.getElementById('listCategoryFilter').addEventListener('change', renderCameraTable);
+      document.getElementById('listSpeedFilter').addEventListener('change', renderCameraTable);
+
+      document.getElementById('btnFilterFavs').addEventListener('click', () => {
+        showFavsOnly = !showFavsOnly;
+        const btn = document.getElementById('btnFilterFavs');
+        if (showFavsOnly) {
+          btn.className = 'flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500 text-slate-950 transition';
+          showToast('已開啟「僅顯示收藏點位」', '★');
+        } else {
+          btn.className = 'flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition';
+          showToast('顯示全部點位', '📋');
+        }
+        renderCameraTable();
+      });
+
+      // Export CSV
+      document.getElementById('btnExportCsv').addEventListener('click', () => {
+        const rows = getFilteredListCameras();
+        const headers = ['編號','縣市','類型','設置地點','行政區','拍攝方向','速限(km/h)','取締項目','緯度','經度','備註'];
+        const csvLines = [
+          headers.join(','),
+          ...rows.map(r => [
+            `"${r.code}"`, `"${r.city}"`, `"${r.typeLabel}"`, `"${r.location.replace(/"/g, '""')}"`,
+            `"${r.district}"`, `"${r.direction}"`, r.speedLimit,
+            `"${r.feature.replace(/"/g, '""')}"`, r.lat, r.lng, `"${r.note.replace(/"/g, '""')}"`
+          ].join(','))
+        ];
+        const blob = new Blob(['\uFEFF' + csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `北北基桃測速照相清冊_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('已匯出 CSV 檔案！', '📥');
+      });
+
+      // Fines calculator inputs
+      document.getElementById('calcVehicleType').addEventListener('change', calculateFine);
+      document.getElementById('calcSpeedLimit').addEventListener('change', calculateFine);
+      document.getElementById('calcActualSpeed').addEventListener('input', calculateFine);
+
+      // Report modal
+      const modal = document.getElementById('modalReport');
+      const openModal = () => { modal.classList.remove('hidden'); modal.classList.add('flex'); };
+      const closeModal = () => { modal.classList.add('hidden'); modal.classList.remove('flex'); };
+      document.getElementById('btnOpenReportModal').addEventListener('click', openModal);
+      document.getElementById('btnCloseModal').addEventListener('click', closeModal);
+      document.getElementById('btnCancelModal').addEventListener('click', closeModal);
+
+      document.getElementById('formAddCamera').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const city = document.getElementById('addCity').value;
+        const cat = document.getElementById('addCategory').value;
+        const dist = document.getElementById('addDistrict').value.trim();
+        const loc = document.getElementById('addLocation').value.trim();
+        const dir = document.getElementById('addDirection').value.trim();
+        const spd = Number(document.getElementById('addSpeedLimit').value);
+        const note = document.getElementById('addNote').value.trim() || '使用者自訂回報執法點';
+
+        const newCam = {
+          id: `U${Date.now()}`,
+          code: `回報-${cameras.length + 1}`,
+          category: cat,
+          typeLabel: cat === 'mobile' ? '移動式黑箱' : (cat === 'fixed' ? '固定式測速' : '科技執法'),
+          func: '測速',
+          city: city,
+          district: dist,
+          location: loc,
+          direction: dir,
+          speedLimit: spd,
+          lat: vehiclePos.lat + 0.001,
+          lng: vehiclePos.lng + 0.001,
+          feature: '自訂回報點位',
+          note: note
+        };
+
+        cameras.unshift(newCam);
+        favorites.add(newCam.id);
+        saveState();
+        renderMapMarkers();
+        updateVehicleHud(false);
+        closeModal();
+        e.target.reset();
+        showToast(`已新增「${loc}」至雷達資料庫`, '✨');
+      });
+    });
+  </script>
+</body>
+</html>
